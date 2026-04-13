@@ -1,0 +1,281 @@
+// Arrays and JSON are stored as JSON-encoded strings (SQLite has no array/json types).
+// Helper `parseArr` in src/lib/serialize.ts handles (de)serialization at the route layer.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String   @id @default(cuid())
+  email            String   @unique
+  passwordHash     String
+  role             String   @default("STUDENT")
+  firstName        String
+  lastName         String
+  avatar           String?
+  bio              String?
+  programme        String?
+  graduationYear   Int?
+  studentId        String?
+  skills           String   @default("[]")
+  linkedinUrl      String?
+  phone            String?
+  location         String?
+  currentRole      String?
+  currentCompany   String?
+  isVerified       Boolean  @default(false)
+  isApproved       Boolean  @default(false)
+  profileComplete  Boolean  @default(false)
+  visibility       String   @default("members")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  opportunitiesPosted Opportunity[]       @relation("PostedOpportunities")
+  applications        Application[]
+  bookmarks           Bookmark[]
+  scholarshipsPosted  Scholarship[]       @relation("PostedScholarships")
+  mentorProfile       MentorProfile?
+  mentorMatches       MentorshipMatch[]   @relation("Mentor")
+  menteeMatches       MentorshipMatch[]   @relation("Mentee")
+  eventsHosted        Event[]             @relation("HostedEvents")
+  eventRegistrations  EventRegistration[]
+  notifications       Notification[]
+  cvs                 CV[]
+  interviewPosts      InterviewExperience[]
+  chatMessages        ChatMessage[]
+  messagesSent        Message[]           @relation("MessagesSent")
+  messagesReceived    Message[]           @relation("MessagesReceived")
+}
+
+model Opportunity {
+  id              String   @id @default(cuid())
+  title           String
+  description     String
+  company         String
+  location        String
+  locationType    String   @default("ONSITE")
+  type            String
+  salaryMin       Int?
+  salaryMax       Int?
+  currency        String   @default("GHS")
+  deadline        DateTime
+  requiredSkills  String   @default("[]")
+  industry        String?
+  experienceLevel String?
+  applicationUrl  String?
+  postedById      String
+  postedBy        User     @relation("PostedOpportunities", fields: [postedById], references: [id], onDelete: Cascade)
+  isApproved      Boolean  @default(true)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  applications Application[]
+  bookmarks    Bookmark[]
+
+  @@index([type, locationType, isActive])
+  @@index([deadline])
+}
+
+model Application {
+  id            String      @id @default(cuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  opportunityId String
+  opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  cvUrl         String?
+  coverLetter   String?
+  status        String      @default("APPLIED")
+  appliedAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([userId, opportunityId])
+}
+
+model Bookmark {
+  id            String      @id @default(cuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  opportunityId String
+  opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+
+  @@unique([userId, opportunityId])
+}
+
+model Scholarship {
+  id              String   @id @default(cuid())
+  title           String
+  provider        String
+  description     String
+  eligibility     String
+  deadline        DateTime
+  awardAmount     String?
+  applicationUrl  String
+  level           String
+  fieldOfStudy    String?
+  location        String?
+  tags            String   @default("[]")
+  submittedById   String
+  submittedBy     User     @relation("PostedScholarships", fields: [submittedById], references: [id], onDelete: Cascade)
+  isApproved      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  @@index([level, isApproved])
+  @@index([deadline])
+}
+
+model MentorProfile {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expertise         String   @default("[]")
+  availability      String?
+  bio               String
+  currentRole       String
+  company           String
+  yearsExperience   Int
+  mentoringTopics   String   @default("[]")
+  mentoringStyles   String   @default("[]")
+  isActive          Boolean  @default(true)
+  averageRating     Float    @default(0)
+  sessionsCompleted Int      @default(0)
+  createdAt         DateTime @default(now())
+}
+
+model MentorshipMatch {
+  id         String   @id @default(cuid())
+  mentorId   String
+  mentor     User     @relation("Mentor", fields: [mentorId], references: [id], onDelete: Cascade)
+  menteeId   String
+  mentee     User     @relation("Mentee", fields: [menteeId], references: [id], onDelete: Cascade)
+  status     String   @default("PENDING")
+  goals      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  sessions Session[]
+
+  @@unique([mentorId, menteeId])
+}
+
+model Session {
+  id             String          @id @default(cuid())
+  matchId        String
+  match          MentorshipMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  scheduledAt    DateTime
+  duration       Int             @default(30)
+  status         String          @default("SCHEDULED")
+  mentorRating   Int?
+  menteeRating   Int?
+  mentorFeedback String?
+  menteeFeedback String?
+  meetingUrl     String?
+}
+
+model Event {
+  id           String   @id @default(cuid())
+  title        String
+  description  String
+  date         DateTime
+  duration     Int      @default(60)
+  location     String
+  isOnline     Boolean  @default(false)
+  capacity     Int      @default(100)
+  hostId       String
+  host         User     @relation("HostedEvents", fields: [hostId], references: [id], onDelete: Cascade)
+  type         String
+  recordingUrl String?
+  slidesUrl    String?
+  createdAt    DateTime @default(now())
+
+  registrations EventRegistration[]
+}
+
+model EventRegistration {
+  id        String   @id @default(cuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([eventId, userId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  message   String
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+}
+
+model CV {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  template  String   @default("modern")
+  data      String   @default("{}")
+  pdfUrl    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model InterviewExperience {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company   String
+  role      String
+  industry  String
+  questions String   @default("[]")
+  tips      String
+  rating    Int      @default(3)
+  createdAt DateTime @default(now())
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  sessionId String
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  role      String
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+}
+
+model CareerRoadmap {
+  id        String   @id @default(cuid())
+  programme String   @unique
+  title     String
+  steps     String   @default("[]")
+  createdAt DateTime @default(now())
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  senderId   String
+  sender     User     @relation("MessagesSent", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId String
+  receiver   User     @relation("MessagesReceived", fields: [receiverId], references: [id], onDelete: Cascade)
+  content    String
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([senderId, receiverId])
+}

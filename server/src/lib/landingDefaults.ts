@@ -1,0 +1,133 @@
+// Default landing page content. Used on first load (before the admin has saved
+// anything) and as the "Reset to defaults" target in the editor.
+// Must stay in sync with the type shape defined below.
+
+export type LandingContent = {
+  hero: {
+    eyebrow: string;
+    headlineLine1: string;
+    headlineLine2: string;
+    headlineHighlight: string;
+    headlineLine3: string;
+    headlineLine4: string;
+    subtitle: string;
+    primaryCta: string;
+    secondaryCta: string;
+    floatingBadgeTitle: string;
+    floatingBadgeSubtitle: string;
+    photos: string[]; // 3 URLs
+  };
+  featuredAlumni: {
+    name: string;
+    role: string;
+    company: string;
+    programme: string;
+    quote: string;
+    photo: string;
+  }[];
+  story: {
+    eyebrow: string;
+    headlineLine1: string;
+    headlineLine2: string;
+    headlineLine3: string;
+    paragraphs: string[];
+    highlightStat: string;
+    highlightLabel: string;
+    facts: { number: string; label: string }[];
+    photo: string;
+  };
+  cta: {
+    headlineLine1: string;
+    headlineLine2: string;
+    subtitle: string;
+    primary: string;
+    secondary: string;
+  };
+};
+
+export const DEFAULT_LANDING: LandingContent = {
+  hero: {
+    eyebrow: 'University of Energy & Natural Resources · Sunyani',
+    headlineLine1: 'The network',
+    headlineLine2: 'that got us',
+    headlineHighlight: 'here',
+    headlineLine3: 'is opening',
+    headlineLine4: 'up to you.',
+    subtitle:
+      'Jobs, scholarships, mentors, and the kind of warm introductions that change careers — all in one place. Built by UENR, for UENR students and alumni around the world.',
+    primaryCta: 'Browse opportunities',
+    secondaryCta: 'Join the network',
+    floatingBadgeTitle: '2,400+ alumni',
+    floatingBadgeSubtitle: 'across 18 countries',
+    photos: [
+      'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=900&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=900&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=900&auto=format&fit=crop&q=80'
+    ]
+  },
+  featuredAlumni: [
+    {
+      name: 'Kwame Mensah',
+      role: 'Senior Sustainability Analyst',
+      company: 'AfriSolar Ltd',
+      programme: 'BSc Environmental Engineering · Class of 2019',
+      quote:
+        'UENR gave me the field experience. This network gave me the people. Seven of my closest collaborators today sat next to me in Sunyani.',
+      photo: 'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=700&auto=format&fit=crop&q=80'
+    },
+    {
+      name: 'Abena Boateng',
+      role: 'Solar Project Manager',
+      company: 'Bui Power Authority',
+      programme: 'BSc Renewable Energy Engineering · Class of 2020',
+      quote:
+        'The mentor I matched with here reviewed every rejection email I got until one turned into my first offer. Six months later I was running the project.',
+      photo: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=700&auto=format&fit=crop&q=80'
+    },
+    {
+      name: 'Kofi Asante',
+      role: 'Software Engineer',
+      company: 'mPharma',
+      programme: 'BSc Computer Science · Class of 2021',
+      quote:
+        'I used to apply to 40 jobs a week and hear nothing. Three applications through this board — three interviews, two offers. The difference is being referred.',
+      photo: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=700&auto=format&fit=crop&q=80'
+    },
+    {
+      name: 'Ama Owusu',
+      role: 'Product Manager',
+      company: 'Hubtel',
+      programme: 'BBA Business Administration · Class of 2018',
+      quote:
+        'I give back now because someone older than me answered my Sunday-night panic emails in 2017. This is how the chain keeps going.',
+      photo: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=700&auto=format&fit=crop&q=80'
+    }
+  ],
+  story: {
+    eyebrow: '— Why this exists',
+    headlineLine1: 'Talent has never',
+    headlineLine2: 'been the problem.',
+    headlineLine3: 'Access has.',
+    paragraphs: [
+      "Every year, hundreds of brilliant UENR graduates enter a job market where the game is already being played by people with connections they don't have. Warm intros. Insider referrals. A senior who actually answers the message.",
+      "This platform is the answer — a place where the alumni already in the room open the door for the students still knocking. No paywall. No gatekeeping. Just Ghana's next generation of engineers, analysts, and builders helping each other up."
+    ],
+    highlightStat: '87%',
+    highlightLabel: 'of active users hear back within 2 weeks',
+    facts: [
+      { number: '1,200+', label: 'Jobs posted in the last year' },
+      { number: '340', label: 'Mentor sessions completed' },
+      { number: '65', label: 'Scholarship wins tracked' },
+      { number: '18', label: 'Countries where UENR alumni work' }
+    ],
+    photo: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=1400&auto=format&fit=crop&q=80'
+  },
+  cta: {
+    headlineLine1: 'Your next chapter',
+    headlineLine2: 'starts with one login.',
+    subtitle:
+      'Free for every UENR student and alumnus. No subscriptions, no upsells — just the people and opportunities you should have had access to from day one.',
+    primary: 'Create your account',
+    secondary: 'Browse first'
+  }
+};
