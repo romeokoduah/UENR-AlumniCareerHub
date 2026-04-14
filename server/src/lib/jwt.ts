@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
+import type { Role } from '@prisma/client';
 
-export type Role = 'STUDENT' | 'ALUMNI' | 'EMPLOYER' | 'ADMIN';
+export type { Role };
 export type JwtPayload = { sub: string; role: Role };
 
 const SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';

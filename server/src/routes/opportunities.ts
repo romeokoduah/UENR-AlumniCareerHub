@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { arr, deserialize } from '../lib/serialize.js';
 
 const router = Router();
 
@@ -15,15 +14,15 @@ router.get('/', optionalAuth, async (req, res, next) => {
         isActive: true,
         isApproved: true,
         deadline: { gte: new Date() },
-        ...(type && { type }),
-        ...(locationType && { locationType }),
-        ...(industry && { industry: { contains: industry } }),
-        ...(skill && { requiredSkills: { contains: skill } }),
+        ...(type && { type: type as any }),
+        ...(locationType && { locationType: locationType as any }),
+        ...(industry && { industry: { contains: industry, mode: 'insensitive' } }),
+        ...(skill && { requiredSkills: { has: skill } }),
         ...(q && {
           OR: [
-            { title: { contains: q } },
-            { description: { contains: q } },
-            { company: { contains: q } }
+            { title: { contains: q, mode: 'insensitive' } },
+            { description: { contains: q, mode: 'insensitive' } },
+            { company: { contains: q, mode: 'insensitive' } }
           ]
         })
       },
@@ -31,7 +30,7 @@ router.get('/', optionalAuth, async (req, res, next) => {
       include: { postedBy: { select: { firstName: true, lastName: true, avatar: true } } },
       take: 100
     });
-    res.json({ success: true, data: deserialize(items) });
+    res.json({ success: true, data: items });
   } catch (e) { next(e); }
 });
 
@@ -42,7 +41,7 @@ router.get('/me/applications', requireAuth, async (req, res, next) => {
       include: { opportunity: true },
       orderBy: { appliedAt: 'desc' }
     });
-    res.json({ success: true, data: deserialize(apps) });
+    res.json({ success: true, data: apps });
   } catch (e) { next(e); }
 });
 
@@ -53,7 +52,7 @@ router.get('/:id', optionalAuth, async (req, res, next) => {
       include: { postedBy: { select: { id: true, firstName: true, lastName: true, avatar: true, currentCompany: true } } }
     });
     if (!opp) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Not found' } });
-    res.json({ success: true, data: deserialize(opp) });
+    res.json({ success: true, data: opp });
   } catch (e) { next(e); }
 });
 
@@ -78,23 +77,12 @@ router.post('/', requireAuth, validate(createSchema), async (req, res, next) => 
     const data = req.body;
     const opp = await prisma.opportunity.create({
       data: {
-        title: data.title,
-        description: data.description,
-        company: data.company,
-        location: data.location,
-        locationType: data.locationType,
-        type: data.type,
-        salaryMin: data.salaryMin,
-        salaryMax: data.salaryMax,
+        ...data,
         deadline: new Date(data.deadline),
-        requiredSkills: arr(data.requiredSkills),
-        industry: data.industry,
-        experienceLevel: data.experienceLevel,
-        applicationUrl: data.applicationUrl,
         postedById: req.auth!.sub
       }
     });
-    res.status(201).json({ success: true, data: deserialize(opp) });
+    res.status(201).json({ success: true, data: opp });
   } catch (e) { next(e); }
 });
 

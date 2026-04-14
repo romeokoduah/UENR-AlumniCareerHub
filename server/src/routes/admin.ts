@@ -3,9 +3,8 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { arr, deserialize } from '../lib/serialize.js';
 import { getLanding, saveLanding, resetLanding } from '../services/siteContent.js';
-import { uploadImage } from '../lib/upload.js';
+import { uploadImage, storeUpload } from '../lib/upload.js';
 
 const router = Router();
 
@@ -56,10 +55,10 @@ router.get('/opportunities', async (req, res, next) => {
         ...(status === 'pending' && { isApproved: false }),
         ...(q && {
           OR: [
-            { title: { contains: q } },
-            { description: { contains: q } },
-            { company: { contains: q } },
-            { location: { contains: q } }
+            { title: { contains: q, mode: 'insensitive' } },
+            { description: { contains: q, mode: 'insensitive' } },
+            { company: { contains: q, mode: 'insensitive' } },
+            { location: { contains: q, mode: 'insensitive' } }
           ]
         })
       },
@@ -70,7 +69,7 @@ router.get('/opportunities', async (req, res, next) => {
       },
       take: 500
     });
-    res.json({ success: true, data: deserialize(items) });
+    res.json({ success: true, data: items });
   } catch (e) { next(e); }
 });
 
@@ -95,16 +94,15 @@ const updateOpportunitySchema = z.object({
 router.patch('/opportunities/:id', validate(updateOpportunitySchema), async (req, res, next) => {
   try {
     const data = req.body as z.infer<typeof updateOpportunitySchema>;
-    const { requiredSkills, deadline, ...rest } = data;
+    const { deadline, ...rest } = data;
     const updated = await prisma.opportunity.update({
       where: { id: req.params.id },
       data: {
         ...rest,
-        ...(deadline !== undefined && { deadline: new Date(deadline) }),
-        ...(requiredSkills !== undefined && { requiredSkills: arr(requiredSkills) })
+        ...(deadline !== undefined && { deadline: new Date(deadline) })
       }
     });
-    res.json({ success: true, data: deserialize(updated) });
+    res.json({ success: true, data: updated });
   } catch (e) { next(e); }
 });
 
@@ -123,7 +121,6 @@ router.get('/content/landing', async (_req, res, next) => {
 
 router.put('/content/landing', async (req, res, next) => {
   try {
-    // Shallow validation — allow any JSON that roughly matches the shape
     if (!req.body || typeof req.body !== 'object') {
       return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid content body' } });
     }
@@ -138,17 +135,21 @@ router.post('/content/landing/reset', async (_req, res, next) => {
 });
 
 // ============ IMAGE UPLOADS ============
-// Cast to any: multer ships its own @types/express@5 subdep which clashes with
-// our @types/express@4. The runtime contract is identical.
-router.post('/uploads/image', uploadImage.single('file') as any, (req: any, res: any) => {
-  if (!req.file) {
-    return res.status(400).json({ success: false, error: { code: 'NO_FILE', message: 'No file uploaded' } });
-  }
-  const url = `/uploads/${req.file.filename}`;
-  res.status(201).json({
-    success: true,
-    data: { url, filename: req.file.filename, size: req.file.size, mimetype: req.file.mimetype }
-  });
+// Buffers land in memory via multer, then storeUpload() decides whether to
+// push them to Cloudinary (prod) or write them to disk (dev fallback).
+router.post('/uploads/image', uploadImage.single('file') as any, async (req: any, res: any, next: any) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: { code: 'NO_FILE', message: 'No file uploaded' } });
+    }
+    const result = await storeUpload({
+      buffer: req.file.buffer,
+      originalname: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype
+    });
+    res.status(201).json({ success: true, data: result });
+  } catch (e) { next(e); }
 });
 
 export default router;

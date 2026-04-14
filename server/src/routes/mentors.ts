@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { arr, deserialize } from '../lib/serialize.js';
 
 const router = Router();
 
@@ -14,7 +13,7 @@ router.get('/', async (_req, res, next) => {
       include: { user: { select: { id: true, firstName: true, lastName: true, avatar: true, programme: true, graduationYear: true } } },
       orderBy: { averageRating: 'desc' }
     });
-    res.json({ success: true, data: deserialize(mentors) });
+    res.json({ success: true, data: mentors });
   } catch (e) { next(e); }
 });
 
@@ -31,23 +30,13 @@ const mentorSchema = z.object({
 
 router.post('/profile', requireAuth, validate(mentorSchema), async (req, res, next) => {
   try {
-    const d = req.body;
-    const data = {
-      expertise: arr(d.expertise),
-      bio: d.bio,
-      currentRole: d.currentRole,
-      company: d.company,
-      yearsExperience: d.yearsExperience,
-      mentoringTopics: arr(d.mentoringTopics),
-      mentoringStyles: arr(d.mentoringStyles),
-      availability: d.availability
-    };
+    const data = req.body;
     const profile = await prisma.mentorProfile.upsert({
       where: { userId: req.auth!.sub },
       create: { ...data, userId: req.auth!.sub },
       update: data
     });
-    res.json({ success: true, data: deserialize(profile) });
+    res.json({ success: true, data: profile });
   } catch (e) { next(e); }
 });
 

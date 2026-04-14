@@ -9,14 +9,17 @@ build
 client/dist
 server/dist
 
-# SQLite dev database (Prisma resolves file:./dev.db relative to schema dir)
+# Legacy SQLite dev database (pre-Neon migration — safe to keep ignored)
 server/prisma/dev.db
 server/prisma/dev.db-journal
 server/prisma/migrations/dev.db*
 
-# Admin-uploaded landing images (user content, not source)
+# Local-dev upload fallback (production uses Cloudinary)
 server/uploads
 uploads
+
+# Legacy local landing content (now stored in Postgres SiteContent table)
+server/data/landing.json
 
 # IDE
 .idea

@@ -2,30 +2,53 @@
 
 Career services platform for the University of Energy and Natural Resources (Ghana) — connecting alumni, students, and career services staff around jobs, scholarships, mentorship, and professional development.
 
-## 🚀 One-click deploy
+## 🚀 Free-tier one-click deploy
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/romeokoduah/UENR-AlumniCareerHub)
 
-Click the button above, sign in to Render with GitHub, and in ~5 minutes you'll have:
+The whole stack runs on free tiers: **Render** (backend + frontend hosting) + **Neon** (managed Postgres) + **Cloudinary** (image hosting). Total cost: $0/month.
 
-- `uenr-career-hub-web` — the React frontend as a static site (free)
-- `uenr-career-hub-api` — the Express backend on a Starter web service with a 1 GB persistent disk mounted at `/data` for the SQLite DB, uploaded images, and landing-page content (~$7/mo)
+### Step 1 — Create your free accounts (~3 minutes total)
 
-The two services are linked automatically: the frontend build picks up the backend's hostname via Render's blueprint variable injection, so `VITE_API_URL` is set for you.
+1. **Neon** — https://console.neon.tech → sign up with GitHub → create a project. Copy two connection strings from the dashboard:
+   - **Pooled** (ends with `-pooler`) — goes into `DATABASE_URL`
+   - **Direct** (no `-pooler`) — goes into `DATABASE_URL_UNPOOLED`
+2. **Cloudinary** — https://cloudinary.com → sign up → from the dashboard **"Product Environment Credentials"** section, copy the **API Environment variable** (format: `cloudinary://<api_key>:<api_secret>@<cloud_name>`)
+3. **Anthropic** *(optional — required only for CareerMate chatbot, CV review, and AI mock interviewer)* — https://console.anthropic.com → API Keys → create key
 
-**After the first deploy**, open the `uenr-career-hub-api` service in the Render dashboard → **Environment** → set `ANTHROPIC_API_KEY` to your Claude key (this is the one variable marked `sync: false`). Hit save and the API redeploys automatically.
+### Step 2 — Click the Deploy to Render button above
 
-Then visit the web service URL (something like `https://uenr-career-hub-web.onrender.com`) and log in with:
+Render will sign you in via GitHub, read `render.yaml` from this repo, and show a preview of both services. When it asks for the secrets (marked `sync: false`), paste:
+
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | Neon pooled connection string |
+| `DATABASE_URL_UNPOOLED` | Neon direct (non-pooled) connection string |
+| `CLOUDINARY_URL` | `cloudinary://api_key:secret@cloud_name` |
+| `ANTHROPIC_API_KEY` | Your Claude key (or leave blank) |
+
+Everything else — `JWT_SECRET`, `CLIENT_ORIGIN`, `VITE_API_URL` — is auto-generated or auto-wired between the services.
+
+Click **Apply** and ~4 minutes later you'll have:
+
+- `https://uenr-career-hub-web.onrender.com` — the React frontend (free static site)
+- `https://uenr-career-hub-api.onrender.com` — the Express backend (free web service)
+
+### Step 3 — Log in
 
 - **Admin:** `admin@uenr.edu.gh` / `admin12345`
 - **Student:** `student@uenr.edu.gh` / `password123`
+- **Alumni:** `kwame.mensah@alumni.uenr.edu.gh` / `password123`
 
-See `DEPLOYMENT.md` for the longer guide including Vercel + Railway, Fly.io, and full-serverless refactor paths.
+Go to **Admin → Landing page editor** to swap photos. Uploads go straight to your Cloudinary account; content changes persist to Neon. Everything survives deploys because nothing lives on Render's ephemeral disk.
+
+See `DEPLOYMENT.md` for alternatives (Vercel + Railway, Fly.io, single-host Render).
 
 ## Stack
 
 - **Client:** React 18 + TypeScript + Vite + TailwindCSS v4 + Framer Motion + React Router + Zustand + React Query
-- **Server:** Node.js + Express + TypeScript + Prisma + SQLite + JWT auth + Socket.io
+- **Server:** Node.js + Express + TypeScript + Prisma + **Neon Postgres** + JWT auth + Socket.io
+- **Storage:** **Cloudinary** for uploaded images, **Neon Postgres** for all structured data (including editable landing content)
 - **AI:** Anthropic Claude (`claude-sonnet-4-20250514`) powers CareerMate chatbot, CV review, mock interviewer
 
 ## Local development
@@ -36,24 +59,25 @@ Requires [Bun](https://bun.sh) (or Node 18+ and npm — Bun is used here because
 # 1. Install workspace deps
 bun install
 
-# 2. Environment
+# 2. Environment — create .env and paste your Neon connection strings
 cp .env.example .env
-# Optional: edit .env to set ANTHROPIC_API_KEY for the CareerMate chatbot.
-# DATABASE_URL defaults to file:./dev.db (SQLite, no external DB needed).
+# Edit .env: set DATABASE_URL and DATABASE_URL_UNPOOLED to your Neon dev
+# branch. Optionally set CLOUDINARY_URL and ANTHROPIC_API_KEY.
+# (Without CLOUDINARY_URL, uploads fall back to server/uploads/ on disk.
+#  Without ANTHROPIC_API_KEY, CareerMate returns friendly "AI unavailable".)
 
-# 3. Database (SQLite — creates server/prisma/dev.db)
-cd server && DATABASE_URL="file:./dev.db" bun x prisma db push --skip-generate && DATABASE_URL="file:./dev.db" bun prisma/seed.ts && cd ..
+# 3. Push schema + seed
+cd server
+bun x prisma generate
+bun x prisma db push
+bun prisma/seed.ts
+cd ..
 
-# 4. Start both dev servers
-#    Client on :5173, server on :4000 — Vite proxies /api and /uploads through.
+# 4. Start both dev servers (client on :5173, server on :4000)
 bun run dev
 ```
 
-Demo accounts (created by the seed):
-
-- **Admin:** `admin@uenr.edu.gh` / `admin12345`
-- **Student:** `student@uenr.edu.gh` / `password123`
-- **Alumni:** `kwame.mensah@alumni.uenr.edu.gh` / `password123`
+**Tip: use a dedicated Neon branch for local dev.** In the Neon console, click **Branches → Create branch** off `main`, name it `dev`, and use that branch's connection strings in `.env`. Your local writes won't pollute the production database and you can reset the branch with one click.
 
 ## Project structure
 
@@ -66,12 +90,10 @@ uenr-alumni-career-hub/
 ├── server/            # Express + Prisma backend
 │   ├── src/routes/      auth, opportunities, scholarships, mentors, events,
 │   │                    chat (Claude proxy), admin (editor routes + uploads)
-│   ├── src/lib/         prisma, jwt, serialize, upload, landingDefaults
-│   ├── src/services/    siteContent (landing.json read/write)
+│   ├── src/lib/         prisma, jwt, upload (Cloudinary), landingDefaults
+│   ├── src/services/    siteContent (Postgres-backed)
 │   ├── src/middleware/  auth, validate, error
-│   ├── prisma/          schema.prisma, seed.ts
-│   ├── data/            landing.json (admin-editable content)
-│   └── uploads/         admin-uploaded images (gitignored)
+│   └── prisma/          schema.prisma, seed.ts
 ├── render.yaml        # Render blueprint for one-click full-stack deploy
 ├── vercel.json        # Vercel config for frontend-only deploy
 ├── DEPLOYMENT.md      # Detailed deployment guide

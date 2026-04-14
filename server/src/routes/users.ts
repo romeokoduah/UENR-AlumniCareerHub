@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { arr, deserialize, parseArr } from '../lib/serialize.js';
 
 const router = Router();
 
@@ -27,17 +26,12 @@ router.patch('/me', requireAuth, validate(updateProfileSchema), async (req, res,
   try {
     const data = req.body;
     const profileComplete = Boolean(data.bio && data.programme && data.skills?.length);
-    const { skills, ...rest } = data;
     const user = await prisma.user.update({
       where: { id: req.auth!.sub },
-      data: {
-        ...rest,
-        ...(skills !== undefined && { skills: arr(skills) }),
-        profileComplete: profileComplete || undefined
-      }
+      data: { ...data, profileComplete: profileComplete || undefined }
     });
     const { passwordHash, ...safe } = user;
-    res.json({ success: true, data: deserialize(safe) });
+    res.json({ success: true, data: safe });
   } catch (e) { next(e); }
 });
 
@@ -50,13 +44,13 @@ router.get('/directory', requireAuth, async (req, res, next) => {
         visibility: { in: ['public', 'members'] },
         ...(programme && { programme }),
         ...(year && { graduationYear: Number(year) }),
-        ...(location && { location: { contains: location } }),
-        ...(industry && { currentCompany: { contains: industry } }),
+        ...(location && { location: { contains: location, mode: 'insensitive' } }),
+        ...(industry && { currentCompany: { contains: industry, mode: 'insensitive' } }),
         ...(q && {
           OR: [
-            { firstName: { contains: q } },
-            { lastName: { contains: q } },
-            { currentRole: { contains: q } }
+            { firstName: { contains: q, mode: 'insensitive' } },
+            { lastName: { contains: q, mode: 'insensitive' } },
+            { currentRole: { contains: q, mode: 'insensitive' } }
           ]
         })
       },
@@ -78,7 +72,7 @@ router.get('/:id', requireAuth, async (req, res, next) => {
     });
     if (!user) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'User not found' } });
     const { passwordHash, ...safe } = user;
-    res.json({ success: true, data: deserialize(safe) });
+    res.json({ success: true, data: safe });
   } catch (e) { next(e); }
 });
 

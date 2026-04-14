@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { arr, deserialize } from '../lib/serialize.js';
 
 const router = Router();
 
@@ -14,22 +13,22 @@ router.get('/', optionalAuth, async (req, res, next) => {
     const items = await prisma.scholarship.findMany({
       where: {
         isApproved: true,
-        ...(level && { level }),
-        ...(field && { fieldOfStudy: { contains: field } }),
+        ...(level && { level: level as any }),
+        ...(field && { fieldOfStudy: { contains: field, mode: 'insensitive' } }),
         ...(status === 'open' && { deadline: { gte: now } }),
         ...(status === 'closed' && { deadline: { lt: now } }),
         ...(q && {
           OR: [
-            { title: { contains: q } },
-            { provider: { contains: q } },
-            { description: { contains: q } }
+            { title: { contains: q, mode: 'insensitive' } },
+            { provider: { contains: q, mode: 'insensitive' } },
+            { description: { contains: q, mode: 'insensitive' } }
           ]
         })
       },
       orderBy: { deadline: 'asc' },
       take: 100
     });
-    res.json({ success: true, data: deserialize(items) });
+    res.json({ success: true, data: items });
   } catch (e) { next(e); }
 });
 
@@ -52,22 +51,13 @@ router.post('/', requireAuth, validate(createSchema), async (req, res, next) => 
     const data = req.body;
     const item = await prisma.scholarship.create({
       data: {
-        title: data.title,
-        provider: data.provider,
-        description: data.description,
-        eligibility: data.eligibility,
+        ...data,
         deadline: new Date(data.deadline),
-        awardAmount: data.awardAmount,
-        applicationUrl: data.applicationUrl,
-        level: data.level,
-        fieldOfStudy: data.fieldOfStudy,
-        location: data.location,
-        tags: arr(data.tags),
         submittedById: req.auth!.sub,
         isApproved: req.auth!.role === 'ADMIN'
       }
     });
-    res.status(201).json({ success: true, data: deserialize(item) });
+    res.status(201).json({ success: true, data: item });
   } catch (e) { next(e); }
 });
 

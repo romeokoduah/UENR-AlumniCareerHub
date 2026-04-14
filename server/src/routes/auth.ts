@@ -6,7 +6,6 @@ import { signToken } from '../lib/jwt.js';
 import { validate } from '../middleware/validate.js';
 import { requireAuth } from '../middleware/auth.js';
 import { AppError } from '../middleware/error.js';
-import { deserialize } from '../lib/serialize.js';
 
 const router = Router();
 
@@ -42,7 +41,7 @@ router.post('/register', validate(registerSchema), async (req, res, next) => {
       }
     });
 
-    const token = signToken({ sub: user.id, role: user.role as any });
+    const token = signToken({ sub: user.id, role: user.role });
     res.status(201).json({
       success: true,
       data: { token, user: sanitizeUser(user) }
@@ -60,7 +59,7 @@ router.post('/login', validate(loginSchema), async (req, res, next) => {
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
 
-    const token = signToken({ sub: user.id, role: user.role as any });
+    const token = signToken({ sub: user.id, role: user.role });
     res.json({ success: true, data: { token, user: sanitizeUser(user) } });
   } catch (e) { next(e); }
 });
@@ -75,7 +74,7 @@ router.get('/me', requireAuth, async (req, res, next) => {
 
 function sanitizeUser(u: any) {
   const { passwordHash, ...rest } = u;
-  return deserialize(rest);
+  return rest;
 }
 
 export default router;

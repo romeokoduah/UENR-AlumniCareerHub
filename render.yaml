@@ -1,51 +1,49 @@
-# Render blueprint — one-click deploy the entire stack.
+# Render blueprint — one-click deploy on the FREE tier.
 #
-# Usage: push this file to GitHub, then click the "Deploy to Render" button
-# in README.md (or visit https://render.com/deploy and paste the repo URL).
+# Before clicking "Deploy to Render":
+#   1. Create a free Neon Postgres project at https://console.neon.tech
+#   2. Create a free Cloudinary account at https://cloudinary.com
+#   3. Have your Anthropic API key ready (optional — chatbot/CV review
+#      degrade gracefully without it)
+#
+# Usage:
+#   - Click the "Deploy to Render" button in README.md
+#   - When Render asks for the `sync: false` variables, paste:
+#       * DATABASE_URL           = Neon *pooled* connection string
+#       * DATABASE_URL_UNPOOLED  = Neon *direct* connection string
+#       * CLOUDINARY_URL         = cloudinary://api_key:secret@cloud_name
+#       * ANTHROPIC_API_KEY      = your Claude API key (optional)
 #
 # What gets created:
-#   1. uenr-career-hub-api  — Node web service running Express on /api/*
+#   1. uenr-career-hub-api  — Node web service (free plan, no disk needed)
 #   2. uenr-career-hub-web  — Static site serving the React/Vite frontend
-#   3. A 1 GB persistent disk mounted at /data on the API service for
-#      the SQLite DB, uploaded images, and landing-page content.
 #
-# After deploy you only need to set ANTHROPIC_API_KEY manually in the
-# dashboard (marked sync: false). Everything else is wired automatically.
+# No persistent disk required: Neon stores the database, Cloudinary stores
+# uploaded images, and landing-page content lives in a Postgres table.
 
 services:
-  # ========== BACKEND (Express + Prisma + SQLite) ==========
+  # ========== BACKEND (Express + Prisma + Neon Postgres) ==========
   - type: web
     name: uenr-career-hub-api
     runtime: node
-    # Starter plan ($7/mo) is required for persistent disks on Render.
-    # The app uses SQLite + file-based uploads, so persistence is mandatory.
-    # If you'd rather stay free, upgrade the stack to Render Postgres +
-    # an external blob store (Cloudinary, S3) — see DEPLOYMENT.md.
-    plan: starter
+    plan: free
     rootDir: server
     buildCommand: |
       npm install
       npx prisma generate
-      mkdir -p /data/content /data/uploads
-      DATABASE_URL="file:/data/dev.db" npx prisma db push --skip-generate --accept-data-loss
-      DATABASE_URL="file:/data/dev.db" DATA_DIR=/data/content UPLOAD_DIR=/data/uploads npx tsx prisma/seed.ts
+      npx prisma db push --skip-generate --accept-data-loss
+      npx tsx prisma/seed.ts
     startCommand: npx tsx src/index.ts
     healthCheckPath: /api/health
-    disk:
-      name: uenr-data
-      mountPath: /data
-      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 4000
       - key: DATABASE_URL
-        value: file:/data/dev.db
-      - key: UPLOAD_DIR
-        value: /data/uploads
-      - key: DATA_DIR
-        value: /data/content
+        sync: false
+      - key: DATABASE_URL_UNPOOLED
+        sync: false
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_EXPIRES_IN
@@ -54,6 +52,8 @@ services:
         sync: false
       - key: ANTHROPIC_MODEL
         value: claude-sonnet-4-20250514
+      - key: CLOUDINARY_URL
+        sync: false
       - key: CLIENT_ORIGIN
         fromService:
           type: web

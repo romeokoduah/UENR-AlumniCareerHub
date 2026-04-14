@@ -23,6 +23,9 @@ import adminRoutes from './routes/admin.js';
 import contentRoutes from './routes/content.js';
 import { UPLOAD_DIR } from './lib/upload.js';
 
+// In prod, uploads go to Cloudinary and this static route never serves
+// real data. We still expose it so local-dev uploads resolve at /uploads/*.
+
 const app = express();
 const httpServer = createServer(app);
 const io = new SocketServer(httpServer, {

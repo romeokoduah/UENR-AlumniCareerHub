@@ -1,20 +1,84 @@
-// Arrays and JSON are stored as JSON-encoded strings (SQLite has no array/json types).
-// Helper `parseArr` in src/lib/serialize.ts handles (de)serialization at the route layer.
+// Postgres schema. Used with Neon in production; run against any Postgres
+// (including Neon's free branching for local dev).
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+enum Role {
+  STUDENT
+  ALUMNI
+  EMPLOYER
+  ADMIN
+}
+
+enum OpportunityType {
+  FULL_TIME
+  PART_TIME
+  INTERNSHIP
+  NATIONAL_SERVICE
+  VOLUNTEER
+  CONTRACT
+}
+
+enum LocationType {
+  REMOTE
+  ONSITE
+  HYBRID
+}
+
+enum ApplicationStatus {
+  APPLIED
+  UNDER_REVIEW
+  INTERVIEW
+  OFFER
+  REJECTED
+  WITHDRAWN
+}
+
+enum ScholarshipLevel {
+  UNDERGRAD
+  MASTERS
+  PHD
+  POSTDOC
+  OTHER
+}
+
+enum MatchStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  COMPLETED
+}
+
+enum SessionStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum NotificationType {
+  OPPORTUNITY_MATCH
+  MENTORSHIP_REQUEST
+  SESSION_REMINDER
+  APPLICATION_UPDATE
+  EVENT_REMINDER
+  ANNOUNCEMENT
+  MESSAGE
 }
 
 model User {
   id               String   @id @default(cuid())
   email            String   @unique
   passwordHash     String
-  role             String   @default("STUDENT")
+  role             Role     @default(STUDENT)
   firstName        String
   lastName         String
   avatar           String?
@@ -22,7 +86,7 @@ model User {
   programme        String?
   graduationYear   Int?
   studentId        String?
-  skills           String   @default("[]")
+  skills           String[] @default([])
   linkedinUrl      String?
   phone            String?
   location         String?
@@ -53,27 +117,27 @@ model User {
 }
 
 model Opportunity {
-  id              String   @id @default(cuid())
+  id              String          @id @default(cuid())
   title           String
   description     String
   company         String
   location        String
-  locationType    String   @default("ONSITE")
-  type            String
+  locationType    LocationType    @default(ONSITE)
+  type            OpportunityType
   salaryMin       Int?
   salaryMax       Int?
-  currency        String   @default("GHS")
+  currency        String          @default("GHS")
   deadline        DateTime
-  requiredSkills  String   @default("[]")
+  requiredSkills  String[]        @default([])
   industry        String?
   experienceLevel String?
   applicationUrl  String?
   postedById      String
-  postedBy        User     @relation("PostedOpportunities", fields: [postedById], references: [id], onDelete: Cascade)
-  isApproved      Boolean  @default(true)
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  postedBy        User            @relation("PostedOpportunities", fields: [postedById], references: [id], onDelete: Cascade)
+  isApproved      Boolean         @default(true)
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   applications Application[]
   bookmarks    Bookmark[]
@@ -83,16 +147,16 @@ model Opportunity {
 }
 
 model Application {
-  id            String      @id @default(cuid())
+  id            String            @id @default(cuid())
   userId        String
-  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   opportunityId String
-  opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  opportunity   Opportunity       @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
   cvUrl         String?
   coverLetter   String?
-  status        String      @default("APPLIED")
-  appliedAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  status        ApplicationStatus @default(APPLIED)
+  appliedAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
 
   @@unique([userId, opportunityId])
 }
@@ -109,7 +173,7 @@ model Bookmark {
 }
 
 model Scholarship {
-  id              String   @id @default(cuid())
+  id              String           @id @default(cuid())
   title           String
   provider        String
   description     String
@@ -117,14 +181,14 @@ model Scholarship {
   deadline        DateTime
   awardAmount     String?
   applicationUrl  String
-  level           String
+  level           ScholarshipLevel
   fieldOfStudy    String?
   location        String?
-  tags            String   @default("[]")
+  tags            String[]         @default([])
   submittedById   String
-  submittedBy     User     @relation("PostedScholarships", fields: [submittedById], references: [id], onDelete: Cascade)
-  isApproved      Boolean  @default(false)
-  createdAt       DateTime @default(now())
+  submittedBy     User             @relation("PostedScholarships", fields: [submittedById], references: [id], onDelete: Cascade)
+  isApproved      Boolean          @default(false)
+  createdAt       DateTime         @default(now())
 
   @@index([level, isApproved])
   @@index([deadline])
@@ -134,14 +198,14 @@ model MentorProfile {
   id                String   @id @default(cuid())
   userId            String   @unique
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  expertise         String   @default("[]")
+  expertise         String[] @default([])
   availability      String?
   bio               String
   currentRole       String
   company           String
   yearsExperience   Int
-  mentoringTopics   String   @default("[]")
-  mentoringStyles   String   @default("[]")
+  mentoringTopics   String[] @default([])
+  mentoringStyles   String[] @default([])
   isActive          Boolean  @default(true)
   averageRating     Float    @default(0)
   sessionsCompleted Int      @default(0)
@@ -149,15 +213,15 @@ model MentorProfile {
 }
 
 model MentorshipMatch {
-  id         String   @id @default(cuid())
+  id         String      @id @default(cuid())
   mentorId   String
-  mentor     User     @relation("Mentor", fields: [mentorId], references: [id], onDelete: Cascade)
+  mentor     User        @relation("Mentor", fields: [mentorId], references: [id], onDelete: Cascade)
   menteeId   String
-  mentee     User     @relation("Mentee", fields: [menteeId], references: [id], onDelete: Cascade)
-  status     String   @default("PENDING")
+  mentee     User        @relation("Mentee", fields: [menteeId], references: [id], onDelete: Cascade)
+  status     MatchStatus @default(PENDING)
   goals      String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
 
   sessions Session[]
 
@@ -170,7 +234,7 @@ model Session {
   match          MentorshipMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
   scheduledAt    DateTime
   duration       Int             @default(30)
-  status         String          @default("SCHEDULED")
+  status         SessionStatus   @default(SCHEDULED)
   mentorRating   Int?
   menteeRating   Int?
   mentorFeedback String?
@@ -209,15 +273,15 @@ model EventRegistration {
 }
 
 model Notification {
-  id        String   @id @default(cuid())
+  id        String           @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type      String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
   title     String
   message   String
   link      String?
-  isRead    Boolean  @default(false)
-  createdAt DateTime @default(now())
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
 
   @@index([userId, isRead])
 }
@@ -228,7 +292,7 @@ model CV {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   title     String
   template  String   @default("modern")
-  data      String   @default("{}")
+  data      Json
   pdfUrl    String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -241,7 +305,7 @@ model InterviewExperience {
   company   String
   role      String
   industry  String
-  questions String   @default("[]")
+  questions String[] @default([])
   tips      String
   rating    Int      @default(3)
   createdAt DateTime @default(now())
@@ -263,7 +327,7 @@ model CareerRoadmap {
   id        String   @id @default(cuid())
   programme String   @unique
   title     String
-  steps     String   @default("[]")
+  steps     Json
   createdAt DateTime @default(now())
 }
 
@@ -278,4 +342,14 @@ model Message {
   createdAt  DateTime @default(now())
 
   @@index([senderId, receiverId])
+}
+
+// Admin-editable site content stored as JSON blobs keyed by section.
+// Currently: "landing" holds the hero/alumni/story/cta config edited via
+// /admin/landing in the UI.
+model SiteContent {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  data      Json
+  updatedAt DateTime @updatedAt
 }
