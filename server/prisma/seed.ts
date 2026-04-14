@@ -5,6 +5,14 @@ const prisma = new PrismaClient();
 const J = (v: unknown) => JSON.stringify(v);
 
 async function main() {
+  // Idempotency guard — if admin already exists, assume seeded and bail.
+  // Lets us safely run `bun prisma/seed.ts` on every deploy.
+  const existing = await prisma.user.findUnique({ where: { email: 'admin@uenr.edu.gh' } });
+  if (existing) {
+    console.log('Database already seeded; skipping.');
+    return;
+  }
+
   console.log('Seeding database...');
 
   const adminPass = await bcrypt.hash('admin12345', 10);

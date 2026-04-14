@@ -1,11 +1,15 @@
 import axios from 'axios';
 
-// In dev, Vite proxies /api → localhost:4000. In prod (Vercel), set
-// VITE_API_URL to your deployed backend origin, e.g.
-// VITE_API_URL=https://uenr-career-hub-api.up.railway.app
-const API_BASE = import.meta.env.VITE_API_URL
-  ? `${import.meta.env.VITE_API_URL.replace(/\/$/, '')}/api`
-  : '/api';
+// In dev, Vite proxies /api → localhost:4000. In prod, set VITE_API_URL
+// to your deployed backend origin. Accepts either a full URL
+// ("https://api.example.com") or a bare hostname ("api.onrender.com" —
+// which is what Render's fromService blueprint injection produces).
+const raw = (import.meta.env.VITE_API_URL || '').trim();
+const normalized = raw
+  ? (/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).replace(/\/$/, '')
+  : '';
+
+const API_BASE = normalized ? `${normalized}/api` : '/api';
 
 export const api = axios.create({
   baseURL: API_BASE,
@@ -14,12 +18,10 @@ export const api = axios.create({
 
 // Public backend origin — used to resolve /uploads/... image URLs in prod.
 // Falls back to same-origin for dev (Vite proxies /uploads → :4000).
-export const BACKEND_ORIGIN = import.meta.env.VITE_API_URL
-  ? import.meta.env.VITE_API_URL.replace(/\/$/, '')
-  : '';
+export const BACKEND_ORIGIN = normalized;
 
 // Turn a backend-relative URL like "/uploads/foo.png" into an absolute URL
-// when VITE_API_URL is set; leave it alone for dev/same-origin.
+// when BACKEND_ORIGIN is set; leave it alone for dev/same-origin.
 export const resolveAsset = (url?: string | null): string => {
   if (!url) return '';
   if (/^https?:\/\//i.test(url)) return url;

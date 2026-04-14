@@ -4,7 +4,11 @@ import { fileURLToPath } from 'url';
 import { DEFAULT_LANDING, type LandingContent } from '../lib/landingDefaults.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.resolve(__dirname, '../../data');
+// Override with DATA_DIR env var in production (e.g. Render persistent disk
+// mounted at /data/content). Defaults to server/data in dev.
+const DATA_DIR = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : path.resolve(__dirname, '../../data');
 const LANDING_FILE = path.join(DATA_DIR, 'landing.json');
 
 async function ensureDir() {

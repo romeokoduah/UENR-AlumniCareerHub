@@ -21,6 +21,7 @@ import notificationRoutes from './routes/notifications.js';
 import cvRoutes from './routes/cvs.js';
 import adminRoutes from './routes/admin.js';
 import contentRoutes from './routes/content.js';
+import { UPLOAD_DIR } from './lib/upload.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -33,7 +34,7 @@ app.set('io', io);
 app.use(helmet());
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173', credentials: true }));
 app.use(express.json({ limit: '2mb' }));
-app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
+app.use('/uploads', express.static(UPLOAD_DIR));
 
 const apiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 300 });
 app.use('/api', apiLimiter);
