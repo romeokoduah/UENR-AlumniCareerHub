@@ -2,7 +2,10 @@
 // (including Neon's free branching for local dev).
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+  // native = local dev OS; rhel-openssl-3.0.x = Vercel serverless Node 20
+  binaryTargets   = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
