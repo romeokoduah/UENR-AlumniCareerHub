@@ -33,3 +33,5 @@ server/data/landing.json
 coverage
 bun.lock
 bun.lockb
+
+.vercel
