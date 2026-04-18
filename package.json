@@ -10,6 +10,7 @@
     "dev:server": "npm --workspace server run dev",
     "build": "bash ./scripts/vercel-build.sh",
     "db:push": "npm --workspace server run db:push",
+    "db:migrate": "npm --workspace server run db:push",
     "db:seed": "npm --workspace server run db:seed",
     "setup": "npm install && npm run db:push && npm run db:seed"
   },

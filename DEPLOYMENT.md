@@ -84,6 +84,30 @@ app.get('*', (_req, res) => res.sendFile(path.join(clientDist, 'index.html')));
 
 Then update `render.yaml` to have one web service with a build command that installs both workspaces and builds the client.
 
+### Vercel (frontend + serverless API)
+
+`vercel.json` + `api/index.ts` deploy the whole stack to Vercel: the Vite SPA as static assets, Express as a single serverless function at `/api/*`.
+
+**Required env vars** (Settings → Environment Variables, set for Production + Preview):
+
+| Variable | Where to get it |
+| --- | --- |
+| `DATABASE_URL` | Neon pooled connection string (`-pooler` host) |
+| `DATABASE_URL_UNPOOLED` | Neon direct connection string (only needed locally for `db:migrate`) |
+| `JWT_SECRET` | Any long random string |
+| `ANTHROPIC_API_KEY` | https://console.anthropic.com (required for chatbot / CV review / mock interview) |
+| `CLOUDINARY_URL` | Cloudinary dashboard (optional; uploads fall back to local disk without it, which won't persist on Vercel) |
+
+**Schema push + seed do NOT run during Vercel deploys.** Run them once from your machine against the Neon database:
+
+```bash
+# with DATABASE_URL and DATABASE_URL_UNPOOLED in your local .env
+npm run db:migrate   # pushes prisma/schema.prisma to Neon
+npm run db:seed      # loads demo users, opportunities, etc.
+```
+
+Re-run `db:migrate` only when the schema changes.
+
 ### Vercel frontend only (static marketing page)
 
 If you just want to show off the landing page without the full backend, Vercel works great. `vercel.json` is already configured at the repo root. Auth/opportunities/editor won't work without a deployed backend, but the landing page, typography, and animations will.
