@@ -18,9 +18,15 @@ if (USE_CLOUDINARY && !process.env.CLOUDINARY_URL) {
 }
 
 // Local dev fallback — writes to server/uploads/ when Cloudinary isn't set.
+// Skip on serverless runtimes where the project directory is read-only.
 export const UPLOAD_DIR = path.resolve(__dirname, '../../uploads');
-if (!USE_CLOUDINARY && !fs.existsSync(UPLOAD_DIR)) {
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+const IS_SERVERLESS = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+if (!USE_CLOUDINARY && !IS_SERVERLESS && !fs.existsSync(UPLOAD_DIR)) {
+  try {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  } catch {
+    // Read-only FS — local disk fallback not available here.
+  }
 }
 
 // Use memory storage universally — the route handler decides whether to

@@ -24,5 +24,16 @@ function buildClient(): PrismaClient {
   return new PrismaClient({ adapter });
 }
 
-export const prisma = global.__prisma ?? buildClient();
-if (process.env.NODE_ENV !== 'production') global.__prisma = prisma;
+// Lazy-initialize so importing this module never throws at cold-start.
+// The client is built on first property access and cached. This means a
+// missing DATABASE_URL only surfaces when a request actually touches the
+// database (e.g. /api/auth/login), not during serverless function init —
+// so routes that don't hit the DB (/api/health) still work.
+export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
+  get(_target, prop, receiver) {
+    const client = global.__prisma ?? buildClient();
+    if (process.env.NODE_ENV !== 'production') global.__prisma = client;
+    const value = Reflect.get(client, prop, receiver);
+    return typeof value === 'function' ? value.bind(client) : value;
+  }
+});
