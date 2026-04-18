@@ -136,7 +136,8 @@ router.post('/content/landing/reset', async (_req, res, next) => {
 
 // ============ IMAGE UPLOADS ============
 // Buffers land in memory via multer, then storeUpload() decides whether to
-// push them to Cloudinary (prod) or write them to disk (dev fallback).
+// push them to Vercel Blob (when BLOB_READ_WRITE_TOKEN is set) or write them
+// to disk (dev fallback).
 router.post('/uploads/image', uploadImage.single('file') as any, async (req: any, res: any, next: any) => {
   try {
     if (!req.file) {

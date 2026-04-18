@@ -1,6 +1,7 @@
 node_modules
 dist
 build
+*.tsbuildinfo
 .env
 .env.local
 *.log
@@ -14,7 +15,7 @@ server/prisma/dev.db
 server/prisma/dev.db-journal
 server/prisma/migrations/dev.db*
 
-# Local-dev upload fallback (production uses Cloudinary)
+# Local-dev upload fallback (production uses Vercel Blob)
 server/uploads
 uploads
 
@@ -35,3 +36,4 @@ bun.lock
 bun.lockb
 
 .vercel
+.env*.local

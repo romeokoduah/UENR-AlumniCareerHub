@@ -7,9 +7,9 @@ UENR Alumni Career Hub is a **split full-stack app** built to run entirely on fr
 - **Frontend** (`client/`) — React + Vite SPA, built to static assets. Hosted on any CDN/static host.
 - **Backend** (`server/`) — Express + Prisma. Runs on any Node host. **Stateless** — no local filesystem dependencies in production.
 - **Database** — Neon (managed Postgres with generous free tier and branching)
-- **Image storage** — Cloudinary (free tier: 25 GB storage, 25 GB bandwidth)
+- **Image storage** — Vercel Blob (5 GB storage + 10 GB bandwidth on Hobby) or Cloudinary (25 GB / 25 GB)
 
-Everything that used to require a persistent disk (SQLite DB file, uploaded landing photos, editable landing content) now lives in Neon or Cloudinary. The backend can be deployed to any free-tier Node host and you can redeploy all day without losing data.
+Everything that used to require a persistent disk (SQLite DB file, uploaded landing photos, editable landing content) now lives in Neon or blob storage. The backend can be deployed to any free-tier Node host and you can redeploy all day without losing data.
 
 ## Recommended: Render free + Neon + Cloudinary (one-click)
 
@@ -96,7 +96,7 @@ Then update `render.yaml` to have one web service with a build command that inst
 | `DATABASE_URL_UNPOOLED` | Neon direct connection string (only needed locally for `db:migrate`) |
 | `JWT_SECRET` | Any long random string |
 | `ANTHROPIC_API_KEY` | https://console.anthropic.com (required for chatbot / CV review / mock interview) |
-| `CLOUDINARY_URL` | Cloudinary dashboard (optional; uploads fall back to local disk without it, which won't persist on Vercel) |
+| `BLOB_READ_WRITE_TOKEN` | Auto-injected by Vercel when a Blob store is linked to the project (Storage → Create → Blob). Needed for image uploads in the landing editor. |
 
 **Schema push + seed do NOT run during Vercel deploys.** Run them once from your machine against the Neon database:
 
