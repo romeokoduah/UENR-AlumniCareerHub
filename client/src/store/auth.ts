@@ -12,14 +12,23 @@ type AuthState = {
   refreshMe: () => Promise<void>;
 };
 
-export const useAuthStore = create<AuthState>((set) => ({
-  user: null,
-  token: null,
-  hydrate: () => {
+// Read persisted auth synchronously so it's in the initial state on the very
+// first render. Without this, RequireAuth sees user=null on mount and redirects
+// to /login before the hydrate useEffect has a chance to run.
+function readPersisted(): { user: User | null; token: string | null } {
+  if (typeof localStorage === 'undefined') return { user: null, token: null };
+  try {
     const token = localStorage.getItem('uenr_token');
-    const user = localStorage.getItem('uenr_user');
-    if (token && user) set({ token, user: JSON.parse(user) });
-  },
+    const raw = localStorage.getItem('uenr_user');
+    return { token, user: raw ? JSON.parse(raw) : null };
+  } catch {
+    return { user: null, token: null };
+  }
+}
+
+export const useAuthStore = create<AuthState>((set) => ({
+  ...readPersisted(),
+  hydrate: () => set(readPersisted()),
   login: async (email, password) => {
     const { data } = await api.post('/auth/login', { email, password });
     localStorage.setItem('uenr_token', data.data.token);
