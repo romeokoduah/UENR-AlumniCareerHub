@@ -378,38 +378,37 @@ function PhotoTile({ src, className, accent }: { src: string; className: string;
 function SmoothImage({
   src, alt = '', className = '', eager = false
 }: { src: string; alt?: string; className?: string; eager?: boolean }) {
-  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
-  const ready = loadedSrc === src;
+  const [loaded, setLoaded] = useState(false);
+  const [errored, setErrored] = useState(false);
 
   useEffect(() => {
-    if (!src) return;
-    let cancelled = false;
-    const img = new Image();
-    img.src = src;
-    const done = () => { if (!cancelled) setLoadedSrc(src); };
-    if (img.complete && img.naturalWidth > 0) {
-      done();
-    } else {
-      img.onload = done;
-      img.onerror = done;
-    }
-    return () => { cancelled = true; };
+    setLoaded(false);
+    setErrored(false);
   }, [src]);
+
+  if (!src) {
+    return <div className={`relative bg-[var(--bg)] ${className}`} />;
+  }
 
   return (
     <div className={`relative ${className}`}>
-      <div
-        aria-hidden
-        className={`absolute inset-0 bg-[var(--card)] transition-opacity duration-300 ${ready ? 'opacity-0' : 'opacity-100 animate-pulse'}`}
-      />
-      {ready && (
-        <img
-          src={src}
-          alt={alt}
-          loading={eager ? 'eager' : 'lazy'}
-          className="absolute inset-0 h-full w-full object-cover"
-        />
+      {!loaded && !errored && (
+        <div aria-hidden className="absolute inset-0 animate-pulse bg-[var(--card)]" />
       )}
+      {errored && (
+        <div className="absolute inset-0 flex items-center justify-center bg-[var(--card)] text-xs text-[var(--muted)]">
+          Image unavailable
+        </div>
+      )}
+      <img
+        key={src}
+        src={src}
+        alt={alt}
+        loading={eager ? 'eager' : 'lazy'}
+        onLoad={() => setLoaded(true)}
+        onError={() => setErrored(true)}
+        className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+      />
     </div>
   );
 }

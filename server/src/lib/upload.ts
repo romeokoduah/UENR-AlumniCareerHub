@@ -100,6 +100,17 @@ export async function storeUpload(file: {
     };
   }
 
+  // No Blob token + serverless = nothing to fall back to. Vercel's runtime
+  // filesystem is read-only and even if we wrote successfully the file
+  // would vanish on the next cold start. Fail with a clear, actionable
+  // message instead of letting fs.writeFile throw EROFS deep in the stack.
+  if (IS_SERVERLESS) {
+    throw new Error(
+      'Image storage is not configured for this deployment. ' +
+      'Set BLOB_READ_WRITE_TOKEN in the Vercel project env (Storage → Blob → Connect Project) and redeploy.'
+    );
+  }
+
   const diskPath = path.join(UPLOAD_DIR, filename);
   await fs.promises.writeFile(diskPath, file.buffer);
   return {
