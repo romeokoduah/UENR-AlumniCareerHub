@@ -105,20 +105,90 @@ uenr-alumni-career-hub/
 
 | Module | Status |
 |---|---|
-| Auth (register / login / role-based access) | ✅ |
+| Auth (register / login / role-based access — STUDENT / ALUMNI / EMPLOYER / ADMIN) | ✅ |
 | Opportunity board (search / filter / apply / bookmark) | ✅ |
 | Scholarships hub | ✅ |
-| Mentor directory + request flow | 🟡 |
+| Mentor directory + request flow | ✅ |
 | Events calendar with RSVP | 🟡 |
-| Alumni directory | 🟡 |
-| CV builder + AI review | 🟡 |
-| AI mock interviewer (CareerMate) | 🟡 |
+| Alumni directory | ✅ |
 | Floating CareerMate chatbot | ✅ |
 | Admin dashboard + user approval | ✅ |
-| Admin opportunities editor (edit / approve / hide / delete any post) | ✅ |
+| Admin opportunities editor | ✅ |
 | Admin landing page editor (photos + copy, browser-based) | ✅ |
-| Notifications (email + in-app) | 🟡 |
+| Notifications (in-app) | ✅ |
+| Notifications (email / SMS) | 🟡 |
+| **Career Tools hub (19 self-service tools)** | ✅ |
 
 ✅ = end-to-end · 🟡 = API + basic UI, polish pending
 
-See `IMPLEMENTATION.md` for the full punch list.
+## Career Tools
+
+A self-service hub for alumni at `/career-tools`, gated to authenticated members. Nineteen tools across six categories — see `client/src/content/careerTools.ts` for the canonical registry.
+
+### Application Materials
+- **CV / Résumé Builder** (`/career-tools/cv-builder`) — named versions, 8 reorderable sections, 3 templates, browser-print PDF export, STAR popover, impact-verb chips. Replaces the legacy `/cv-builder`.
+- **Cover Letter Generator** (`/career-tools/cover-letter`) — 8 deterministic templates by industry/tone, structured form + live preview, opportunity pre-fill via `?opportunityId=`.
+- **Portfolio Builder** (`/career-tools/portfolio` editor + public `/p/:slug`) — 2 themes, OG/Twitter/JSON-LD meta, optional bcrypt password gate.
+- **Document Vault** (`/career-tools/vault` + public `/v/:token`) — 25 MB uploads (PDF/DOC/XLS/PPT/CSV/images), per-share password/expiry/view-cap, full access log.
+
+### Skills & Growth
+- **Skills Assessment** (`/career-tools/skills`) — pick a target role, self-rate 1–5, deterministic readiness % with gap chart and per-gap learning suggestions.
+- **Learning Hub** (`/career-tools/learn`) — curated + user-submitted resources (Coursera, edX, MIT OCW, MEST, Ghana Code Club, Ashesi, Kumasi Hive, ALU OpenLearn) with admin moderation queue at `/admin/learning`.
+- **Certifications Tracker** (`/career-tools/certifications` + public `/verify/cert/:slug`) — issue/expiry tracking with 90-day expiry widget, optional vault-stored PDF, third-party verification page.
+- **Career Path Explorer** (`/career-tools/paths`) — 47 nodes across 10 industries × 5 levels with realistic 2024–2026 GHS salary bands, cross-industry pivots, alumni in-role lookup.
+
+### Interview Prep
+- **Interview Question Bank** (`/career-tools/interview/questions`) — 80 hand-curated questions (behavioral / technical / domain / case / situational), vote/flag, MediaRecorder practice mode with Save-to-Vault.
+- **Mock Interview Scheduler** (`/career-tools/interview/mock`) — integrates with the existing Mentors module (no duplicate booking system), 5-axis feedback rubric.
+- **Aptitude Test Practice** (`/career-tools/aptitude`) — 8 categories (GMAT, GRE, Ghana Civil Service, consulting case, numerical, logical), untimed practice + timed 20-question mock, server-side scoring, item-level review.
+- **Salary Negotiation** (`/career-tools/salary`) — 4 tabs (Benchmarks, Cost-of-Living, Offer Analyzer, Scripts); ~60 benchmarks across 15 roles × 11 cities, 8 hand-written playbooks.
+
+### Ventures
+- **Startup Resources Hub** (`/career-tools/ventures/startup`) — pitch decks, fundraising guides, 12 Ghana incubators (MEST, Kosmos, GTL, Innohub, GIZ, GCIC, etc.), 10 grants (Tony Elumelu, Mastercard EleV, Horizon Europe, etc.).
+- **Freelance Project Board** (`/career-tools/ventures/freelance`) — full lifecycle post→bid→award→complete→review. Off-platform payment for v1; escrow + Mobile Money deferred to v2.
+- **Ghana Business Registration Guide** (`/career-tools/ventures/registration`) — 31 steps across sole-prop / partnership / LLC / foreign investment / sector-specific licenses (RGD, GRA, SSNIT, GIPC, EPA, Minerals Commission, Energy Commission, FDA, NCA, Bank of Ghana).
+
+### Support
+- **Career Counseling** (`/career-tools/counseling`) — UENR Career Services staff publish slots, alumni book with topic + preferred mode (in-person / video / phone), waitlist auto-promotion.
+- **Transcripts & Verification** (`/career-tools/transcripts` + public `/verify/transcript/:token`) — request modal with live fee preview, 6-stage status pipeline, public credential verification (no contact info exposed). Pay-at-Registry for v1; Paystack deferred.
+- **Achievements Wall** (`/career-tools/achievements` + admin `/admin/achievements`) — moderated submissions, congrats threads, featured flag.
+
+### Employers
+- **Applicant Tracking System** (`/career-tools/ats`, EMPLOYER + ADMIN gated) — kanban + table views, transparent deterministic match scoring (0.50/0.20/0.15/0.10/0.05 weights with full breakdown shown to recruiters), bulk actions + CSV export, talent pool, anonymous-application support. Candidate-side dashboard at `/career-tools/ats/my-applications`.
+
+### Operator runbook (UENR Career Services staff)
+
+After every fresh deploy, an `ADMIN`-role user must POST once to each of these one-shot seed endpoints (idempotent — safe to re-run after content edits):
+
+```
+POST /api/skills/seed              # 93 skills + 25 role profiles
+POST /api/learning/seed            # 50 curated resources + 6 UENR-pivot paths
+POST /api/paths/seed               # 47 career-path nodes
+POST /api/interview-questions/seed # 80 interview questions
+POST /api/aptitude/seed            # ~120 aptitude questions
+POST /api/salary/seed              # ~60 salary benchmarks + 11 cost-of-living rows
+POST /api/startup/seed             # 8 deck templates + 12 incubators + 10 grants
+POST /api/biz-reg/seed             # 31 business-registration steps
+```
+
+Day-to-day staff workflows:
+
+- **Counseling** — visit `/career-tools/counseling`, click "Switch to staff view", publish slots and approve/complete bookings. Cancellations auto-promote the oldest waitlist booking.
+- **Transcripts** — visit `/career-tools/transcripts`, click "Switch to staff view". Mark requests paid (with the receipt reference number from the Registry counter) and advance them through the pipeline.
+- **Learning Hub moderation** — visit `/admin/learning` to approve / reject user-submitted resources.
+- **Achievements moderation** — visit `/admin/achievements` to approve, feature, or reject submitted achievements.
+- **Pitch deck templates** — the `/api/startup/seed` endpoint inserts deck records with placeholder file URLs. Replace each via `PATCH` after uploading the real `.pptx` / `.pdf` to the Document Vault (no admin UI for this in v1 — direct DB / API call required).
+- **Cert verification URLs** — set `CLIENT_ORIGIN` in the production environment so the copy-to-clipboard URL on `/career-tools/certifications` points at the SPA origin instead of the API.
+
+### What's deferred to a v2 pass
+
+- Real payment provider (Paystack + Mobile Money). Hooks exist on the freelance board (`payment off-platform` banner) and transcripts (`pay-at-Registry` banner).
+- Email and SMS notification delivery (in-app `Notification` model already populates).
+- Calendar integration (`.ics` + Google Meet) for the mock interview scheduler and ATS interview rounds.
+- Drag-and-drop kanban for the ATS (button-based in v1).
+- ATS offer-letter generator + e-signature.
+- Configurable per-job ATS pipelines (fixed `ApplicationStatus` enum in v1).
+- Skill synonym matching in the ATS scorer.
+- Onboarding hints, full Lighthouse / axe audit, cross-browser pass.
+
+See `CHANGELOG.md` for the per-phase build history.

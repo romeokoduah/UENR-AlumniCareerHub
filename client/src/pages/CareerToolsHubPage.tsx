@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { motion } from 'framer-motion';
-import { Search, ArrowUpRight, Sparkles, Clock } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Search, ArrowUpRight, Sparkles, Clock, X } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
 import {
@@ -27,10 +27,25 @@ const CATEGORY_FILTERS: { key: 'all' | CareerToolCategory; label: string }[] = [
   { key: 'employers', label: CATEGORY_LABELS.employers }
 ];
 
+const HINT_DISMISSED_KEY = 'uenr_career_tools_hint_dismissed_v1';
+
 export default function CareerToolsHubPage() {
   const user = useAuthStore((s) => s.user);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'all' | CareerToolCategory>('all');
+  const [hintVisible, setHintVisible] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      if (!window.localStorage.getItem(HINT_DISMISSED_KEY)) setHintVisible(true);
+    } catch { /* ignore */ }
+  }, []);
+
+  const dismissHint = () => {
+    setHintVisible(false);
+    try { window.localStorage.setItem(HINT_DISMISSED_KEY, '1'); } catch { /* ignore */ }
+  };
 
   const tools = useMemo(() => visibleCareerTools(user?.role), [user?.role]);
   const showEmployerChip = user?.role === 'EMPLOYER' || user?.role === 'ADMIN';
@@ -69,6 +84,33 @@ export default function CareerToolsHubPage() {
     <div className="bg-[var(--bg)]">
       <section className="border-b border-[var(--border)]">
         <div className="mx-auto max-w-7xl px-4 py-12 md:py-16">
+          <AnimatePresence>
+            {hintVisible && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="mb-6 flex items-start gap-3 rounded-2xl border border-[#84CC16]/40 bg-[#84CC16]/10 p-4 text-sm dark:border-[#84CC16]/30 dark:bg-[#84CC16]/5"
+              >
+                <Sparkles size={18} className="shrink-0 text-[#065F46] dark:text-[#84CC16]" />
+                <div className="flex-1">
+                  <div className="font-semibold text-[var(--fg)]">Welcome to your Career Tools.</div>
+                  <p className="mt-1 text-[var(--fg)]/80">
+                    Nineteen self-service tools to help you write better applications, sharpen your skills, prep
+                    for interviews, launch a venture, and more. Start with the CV Builder or browse by category.
+                  </p>
+                </div>
+                <button
+                  onClick={dismissHint}
+                  className="text-[var(--muted)] hover:text-[var(--fg)]"
+                  aria-label="Dismiss"
+                >
+                  <X size={16} />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <div className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-[#065F46] dark:text-[#84CC16]">
             — Career Tools
           </div>
