@@ -118,6 +118,9 @@ model User {
   messagesSent        Message[]           @relation("MessagesSent")
   messagesReceived    Message[]           @relation("MessagesReceived")
   careerActivity      CareerToolsActivity[]
+  coverLetters        CoverLetter[]
+  portfolios          Portfolio[]
+  vaultDocuments      VaultDocument[]
 }
 
 model Opportunity {
@@ -346,6 +349,122 @@ model Message {
   createdAt  DateTime @default(now())
 
   @@index([senderId, receiverId])
+}
+
+// Cover letters generated via the Career Tools cover-letter builder.
+// Each user can have many drafts; `data` holds the structured form fields
+// + filled-in body so the editor is fully reconstructable.
+model CoverLetter {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  template  String   @default("classic")
+  data      Json
+  jobLinkId String?  // Optional link to an Opportunity this letter targets
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, updatedAt(sort: Desc)])
+}
+
+// Public portfolio published by an alumnus at /p/<slug>. Each user can
+// have multiple portfolios; `slug` is global-unique so URLs stay short.
+model Portfolio {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slug         String   @unique
+  title        String
+  tagline      String?
+  bio          String?
+  theme        String   @default("clean")
+  contactEmail String?
+  links        Json?    // [{ label, url }]
+  isPublished  Boolean  @default(false)
+  passwordHash String?  // optional gating
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  projects PortfolioProject[]
+
+  @@index([userId])
+}
+
+model PortfolioProject {
+  id           String    @id @default(cuid())
+  portfolioId  String
+  portfolio    Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  position     Int       @default(0)
+  title        String
+  summary      String
+  role         String?
+  coverUrl     String?
+  techStack    String[]  @default([])
+  externalUrl  String?
+  caseStudyMd  String?
+
+  @@index([portfolioId, position])
+}
+
+// Document Vault — each row is one stored file owned by a user. Files
+// live in Vercel Blob (or local disk in dev); the row holds metadata
+// + access control. Per-document share links are tracked in a separate
+// table so we can audit who viewed what.
+enum VaultCategory {
+  TRANSCRIPT
+  CERTIFICATE
+  REFERENCE
+  IDENTIFICATION
+  CV
+  COVER_LETTER
+  OTHER
+}
+
+model VaultDocument {
+  id          String        @id @default(cuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  filename    String
+  originalName String
+  mimetype    String
+  size        Int
+  url         String
+  category    VaultCategory @default(OTHER)
+  notes       String?
+  createdAt   DateTime      @default(now())
+
+  shares VaultShareLink[]
+
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+model VaultShareLink {
+  id            String        @id @default(cuid())
+  documentId    String
+  document      VaultDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  token         String        @unique
+  passwordHash  String?
+  expiresAt     DateTime?
+  maxViews      Int?
+  viewCount     Int           @default(0)
+  isRevoked     Boolean       @default(false)
+  createdAt     DateTime      @default(now())
+
+  accessLog VaultAccessLog[]
+
+  @@index([documentId])
+}
+
+model VaultAccessLog {
+  id        String         @id @default(cuid())
+  shareId   String
+  share     VaultShareLink @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  ip        String?
+  userAgent String?
+  createdAt DateTime       @default(now())
+
+  @@index([shareId, createdAt(sort: Desc)])
 }
 
 // Activity feed for the Career Tools hub. Each row is one interaction

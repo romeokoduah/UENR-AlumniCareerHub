@@ -33,6 +33,34 @@ export const uploadImage = multer({
   }
 });
 
+// Document uploads (vault, CV exports, cover letters). Accepts PDFs, common
+// office formats, and plain text up to 25 MB.
+const ALLOWED_DOC_MIMES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain',
+  'text/csv',
+  'image/jpeg',
+  'image/png',
+  'image/webp'
+]);
+
+export const uploadDocument = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!ALLOWED_DOC_MIMES.has(file.mimetype)) {
+      return cb(new Error(`Unsupported file type: ${file.mimetype}`));
+    }
+    cb(null, true);
+  }
+});
+
 export type UploadResult = {
   url: string;
   filename: string;
