@@ -1,10 +1,10 @@
 import { NavLink } from 'react-router-dom';
-import { Home, Briefcase, GraduationCap, Users, User } from 'lucide-react';
+import { Home, Briefcase, Users, Wrench, User } from 'lucide-react';
 
 const tabs = [
   { to: '/', label: 'Home', icon: Home },
   { to: '/opportunities', label: 'Jobs', icon: Briefcase },
-  { to: '/scholarships', label: 'Scholar', icon: GraduationCap },
+  { to: '/career-tools', label: 'Tools', icon: Wrench },
   { to: '/mentors', label: 'Mentors', icon: Users },
   { to: '/profile', label: 'Me', icon: User }
 ];

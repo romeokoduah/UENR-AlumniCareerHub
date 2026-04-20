@@ -117,6 +117,7 @@ model User {
   chatMessages        ChatMessage[]
   messagesSent        Message[]           @relation("MessagesSent")
   messagesReceived    Message[]           @relation("MessagesReceived")
+  careerActivity      CareerToolsActivity[]
 }
 
 model Opportunity {
@@ -345,6 +346,21 @@ model Message {
   createdAt  DateTime @default(now())
 
   @@index([senderId, receiverId])
+}
+
+// Activity feed for the Career Tools hub. Each row is one interaction
+// (opening a tool, saving a draft, exporting a file, etc.) and powers
+// the hub's "Recently used" row.
+model CareerToolsActivity {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tool      String
+  action    String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
 }
 
 // Admin-editable site content stored as JSON blobs keyed by section.

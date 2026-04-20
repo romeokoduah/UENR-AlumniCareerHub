@@ -29,6 +29,7 @@ import eventRoutes from './routes/events.js';
 import chatRoutes from './routes/chat.js';
 import notificationRoutes from './routes/notifications.js';
 import cvRoutes from './routes/cvs.js';
+import careerToolsRoutes from './routes/careerTools.js';
 import adminRoutes from './routes/admin.js';
 import contentRoutes from './routes/content.js';
 import { UPLOAD_DIR } from './lib/upload.js';
@@ -62,6 +63,7 @@ export function createApp() {
   app.use('/api/chat', chatLimiter, chatRoutes);
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/cvs', cvRoutes);
+  app.use('/api/career-tools', careerToolsRoutes);
   app.use('/api/content', contentRoutes);
   app.use('/api/admin', adminRoutes);
 

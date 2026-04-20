@@ -8,6 +8,7 @@ const navLinks = [
   { to: '/opportunities', label: 'Jobs' },
   { to: '/scholarships', label: 'Scholarships' },
   { to: '/mentors', label: 'Mentors' },
+  { to: '/career-tools', label: 'Career Tools' },
   { to: '/events', label: 'Events' },
   { to: '/directory', label: 'Alumni' }
 ];

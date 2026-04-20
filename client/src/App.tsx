@@ -22,6 +22,8 @@ const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const AdminPage = lazy(() => import('./pages/AdminPage'));
 const AdminOpportunitiesPage = lazy(() => import('./pages/AdminOpportunitiesPage'));
 const AdminLandingEditorPage = lazy(() => import('./pages/AdminLandingEditorPage'));
+const CareerToolsHubPage = lazy(() => import('./pages/CareerToolsHubPage'));
+const CareerToolPlaceholderPage = lazy(() => import('./pages/CareerToolPlaceholderPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 export default function App() {
@@ -45,6 +47,8 @@ export default function App() {
           <Route path="directory" element={<RequireAuth><DirectoryPage /></RequireAuth>} />
           <Route path="cv-builder" element={<RequireAuth><CVBuilderPage /></RequireAuth>} />
           <Route path="interview-prep" element={<InterviewPrepPage />} />
+          <Route path="career-tools" element={<RequireAuth><CareerToolsHubPage /></RequireAuth>} />
+          <Route path="career-tools/*" element={<RequireAuth><CareerToolPlaceholderPage /></RequireAuth>} />
           <Route path="profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
           <Route path="admin" element={<RequireAuth roles={['ADMIN']}><AdminPage /></RequireAuth>} />
           <Route path="admin/opportunities" element={<RequireAuth roles={['ADMIN']}><AdminOpportunitiesPage /></RequireAuth>} />
