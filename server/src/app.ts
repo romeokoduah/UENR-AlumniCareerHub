@@ -30,6 +30,9 @@ import chatRoutes from './routes/chat.js';
 import notificationRoutes from './routes/notifications.js';
 import cvRoutes from './routes/cvs.js';
 import careerToolsRoutes from './routes/careerTools.js';
+import coverLetterRoutes from './routes/coverLetters.js';
+import portfolioRoutes from './routes/portfolios.js';
+import vaultRoutes from './routes/vault.js';
 import adminRoutes from './routes/admin.js';
 import contentRoutes from './routes/content.js';
 import { UPLOAD_DIR } from './lib/upload.js';
@@ -64,6 +67,9 @@ export function createApp() {
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/cvs', cvRoutes);
   app.use('/api/career-tools', careerToolsRoutes);
+  app.use('/api/cover-letters', coverLetterRoutes);
+  app.use('/api/portfolios', portfolioRoutes);
+  app.use('/api/vault', vaultRoutes);
   app.use('/api/content', contentRoutes);
   app.use('/api/admin', adminRoutes);
 

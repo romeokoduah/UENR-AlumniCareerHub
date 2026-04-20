@@ -16,7 +16,6 @@ const ScholarshipsPage = lazy(() => import('./pages/ScholarshipsPage'));
 const MentorsPage = lazy(() => import('./pages/MentorsPage'));
 const EventsPage = lazy(() => import('./pages/EventsPage'));
 const DirectoryPage = lazy(() => import('./pages/DirectoryPage'));
-const CVBuilderPage = lazy(() => import('./pages/CVBuilderPage'));
 const InterviewPrepPage = lazy(() => import('./pages/InterviewPrepPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const AdminPage = lazy(() => import('./pages/AdminPage'));
@@ -24,6 +23,14 @@ const AdminOpportunitiesPage = lazy(() => import('./pages/AdminOpportunitiesPage
 const AdminLandingEditorPage = lazy(() => import('./pages/AdminLandingEditorPage'));
 const CareerToolsHubPage = lazy(() => import('./pages/CareerToolsHubPage'));
 const CareerToolPlaceholderPage = lazy(() => import('./pages/CareerToolPlaceholderPage'));
+const CVBuilderPage = lazy(() => import('./pages/career-tools/CVBuilderPage'));
+const CVPrintPage = lazy(() => import('./pages/career-tools/CVPrintPage'));
+const CoverLetterPage = lazy(() => import('./pages/career-tools/CoverLetterPage'));
+const CoverLetterPrintPage = lazy(() => import('./pages/career-tools/CoverLetterPrintPage'));
+const PortfolioEditorPage = lazy(() => import('./pages/career-tools/PortfolioEditorPage'));
+const VaultPage = lazy(() => import('./pages/career-tools/VaultPage'));
+const PublicPortfolioPage = lazy(() => import('./pages/PublicPortfolioPage'));
+const PublicShareViewerPage = lazy(() => import('./pages/PublicShareViewerPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 export default function App() {
@@ -33,6 +40,15 @@ export default function App() {
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
+        {/* Public, full-bleed routes (no Navbar/Footer chrome) */}
+        <Route path="/p/:slug" element={<PublicPortfolioPage />} />
+        <Route path="/v/:token" element={<PublicShareViewerPage />} />
+        <Route
+          path="/career-tools/cover-letter/print/:id"
+          element={<RequireAuth><CoverLetterPrintPage /></RequireAuth>}
+        />
+
+        {/* Standard chrome */}
         <Route element={<AppLayout />}>
           <Route index element={<HomePage />} />
           <Route path="login" element={<LoginPage />} />
@@ -45,10 +61,18 @@ export default function App() {
           <Route path="mentors" element={<MentorsPage />} />
           <Route path="events" element={<EventsPage />} />
           <Route path="directory" element={<RequireAuth><DirectoryPage /></RequireAuth>} />
-          <Route path="cv-builder" element={<RequireAuth><CVBuilderPage /></RequireAuth>} />
+          <Route path="cv-builder" element={<Navigate to="/career-tools/cv-builder" replace />} />
           <Route path="interview-prep" element={<InterviewPrepPage />} />
+
+          {/* Career Tools */}
           <Route path="career-tools" element={<RequireAuth><CareerToolsHubPage /></RequireAuth>} />
+          <Route path="career-tools/cv-builder" element={<RequireAuth><CVBuilderPage /></RequireAuth>} />
+          <Route path="career-tools/cv-builder/print/:id" element={<RequireAuth><CVPrintPage /></RequireAuth>} />
+          <Route path="career-tools/cover-letter" element={<RequireAuth><CoverLetterPage /></RequireAuth>} />
+          <Route path="career-tools/portfolio" element={<RequireAuth><PortfolioEditorPage /></RequireAuth>} />
+          <Route path="career-tools/vault" element={<RequireAuth><VaultPage /></RequireAuth>} />
           <Route path="career-tools/*" element={<RequireAuth><CareerToolPlaceholderPage /></RequireAuth>} />
+
           <Route path="profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
           <Route path="admin" element={<RequireAuth roles={['ADMIN']}><AdminPage /></RequireAuth>} />
           <Route path="admin/opportunities" element={<RequireAuth roles={['ADMIN']}><AdminOpportunitiesPage /></RequireAuth>} />

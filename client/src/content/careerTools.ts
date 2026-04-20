@@ -47,7 +47,7 @@ export const CAREER_TOOLS: CareerTool[] = [
     category: 'application-materials',
     icon: FileText,
     phase: 1,
-    status: 'coming-soon'
+    status: 'live'
   },
   {
     slug: 'cover-letter',
@@ -56,25 +56,25 @@ export const CAREER_TOOLS: CareerTool[] = [
     category: 'application-materials',
     icon: Mail,
     phase: 1,
-    status: 'coming-soon'
+    status: 'live'
   },
   {
     slug: 'portfolio',
     name: 'Portfolio Builder',
-    description: 'Publish a polished portfolio at /p/<you>/<slug> — case studies, themes, password gates.',
+    description: 'Publish a polished portfolio at /p/<slug> — case studies, themes, password gates.',
     category: 'application-materials',
     icon: Layout,
     phase: 1,
-    status: 'coming-soon'
+    status: 'live'
   },
   {
     slug: 'vault',
     name: 'Document Vault',
-    description: 'Encrypted storage for transcripts, certificates, references — share with expiry and view caps.',
+    description: 'Secure storage for transcripts, certificates, references — share with expiry and view caps.',
     category: 'application-materials',
     icon: Lock,
     phase: 1,
-    status: 'coming-soon'
+    status: 'live'
   },
 
   // ===== Skills & Growth =====
