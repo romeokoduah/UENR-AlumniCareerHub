@@ -8,10 +8,28 @@ import type { Opportunity, EventItem } from '../types';
 import type { LandingContent } from '../types/landing';
 import { DEFAULT_LANDING } from '../content/landing';
 
+const LANDING_CACHE_KEY = 'uenr_landing_cache_v1';
+
+function readCachedLanding(): LandingContent | undefined {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    const raw = window.localStorage.getItem(LANDING_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as LandingContent) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export default function HomePage() {
   const { data: landing = DEFAULT_LANDING } = useQuery<LandingContent>({
     queryKey: ['content', 'landing'],
-    queryFn: async () => (await api.get('/content/landing')).data.data,
+    queryFn: async () => {
+      const fresh = (await api.get('/content/landing')).data.data as LandingContent;
+      try { window.localStorage.setItem(LANDING_CACHE_KEY, JSON.stringify(fresh)); } catch {}
+      return fresh;
+    },
+    initialData: readCachedLanding,
+    initialDataUpdatedAt: 0,
     placeholderData: DEFAULT_LANDING
   });
   const HERO_COPY = landing.hero;
