@@ -131,6 +131,11 @@ model User {
   gigBids             FreelanceBid[]    @relation("Bids")
   reviewsGiven        FreelanceReview[] @relation("GivenReviews")
   reviewsReceived     FreelanceReview[] @relation("ReceivedReviews")
+  counselingSlots     CounselingSlot[]      @relation("StaffSlots")
+  counselingBookings  CounselingBooking[]   @relation("AlumniBookings")
+  transcriptRequests  TranscriptRequest[]
+  achievements        Achievement[]
+  congratsGiven       AchievementCongrats[] @relation("CongratsGiven")
 }
 
 model Opportunity {
@@ -918,6 +923,151 @@ model BizRegStep {
   createdAt         DateTime @default(now())
 
   @@index([category, position])
+}
+
+// ===== Phase 5: Support =====
+
+// Career counseling: staff publish bookable slots; alumni book.
+enum CounselingMode {
+  IN_PERSON
+  VIDEO
+  PHONE
+}
+
+enum CounselingBookingStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  WAITLIST
+}
+
+model CounselingSlot {
+  id            String        @id @default(cuid())
+  staffId       String
+  staff         User          @relation("StaffSlots", fields: [staffId], references: [id], onDelete: Cascade)
+  startsAt      DateTime
+  endsAt        DateTime
+  mode          CounselingMode @default(VIDEO)
+  capacity      Int           @default(1)
+  isActive      Boolean       @default(true)
+  notes         String?
+  createdAt     DateTime      @default(now())
+
+  bookings CounselingBooking[]
+
+  @@index([staffId, startsAt])
+  @@index([startsAt, isActive])
+}
+
+model CounselingBooking {
+  id                  String                  @id @default(cuid())
+  slotId              String
+  slot                CounselingSlot          @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  alumniId            String
+  alumnus             User                    @relation("AlumniBookings", fields: [alumniId], references: [id], onDelete: Cascade)
+  topic               String
+  preferredMode       CounselingMode
+  status              CounselingBookingStatus @default(PENDING)
+  staffNotes          String?
+  satisfactionRating  Int?
+  satisfactionComment String?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  @@index([alumniId, createdAt(sort: Desc)])
+  @@index([slotId, status])
+}
+
+// Transcripts & verification.
+enum TranscriptType {
+  TRANSCRIPT
+  LETTER_OF_ATTENDANCE
+  DEGREE_VERIFICATION
+}
+
+enum TranscriptDeliveryMethod {
+  PICKUP
+  POSTAL_LOCAL
+  POSTAL_INTERNATIONAL
+  ELECTRONIC
+}
+
+enum TranscriptStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  PROCESSING
+  READY
+  DISPATCHED
+  DELIVERED
+  CANCELLED
+}
+
+model TranscriptRequest {
+  id                String                   @id @default(cuid())
+  userId            String
+  user              User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type              TranscriptType
+  copies            Int                      @default(1)
+  deliveryMethod    TranscriptDeliveryMethod
+  recipientName     String?
+  recipientAddress  String?
+  recipientEmail    String?
+  feeAmountGhs      Int
+  paymentRef        String?
+  paymentStatus     String                   @default("UNPAID")
+  status            TranscriptStatus         @default(SUBMITTED)
+  publicVerifyToken String?                  @unique
+  notes             String?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status])
+}
+
+// Achievements wall — moderated, with congrats threads.
+enum AchievementType {
+  PROMOTION
+  PUBLICATION
+  AWARD
+  VENTURE_LAUNCH
+  COMMUNITY_IMPACT
+  MEDIA_FEATURE
+  OTHER
+}
+
+model Achievement {
+  id            String          @id @default(cuid())
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          AchievementType
+  title         String
+  description   String
+  date          DateTime
+  link          String?
+  imageUrl      String?
+  isApproved    Boolean         @default(false)
+  isFeatured    Boolean         @default(false)
+  congratsCount Int             @default(0)
+  createdAt     DateTime        @default(now())
+
+  congrats AchievementCongrats[]
+
+  @@index([isApproved, date(sort: Desc)])
+  @@index([type, isApproved])
+}
+
+model AchievementCongrats {
+  id            String      @id @default(cuid())
+  achievementId String
+  achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User        @relation("CongratsGiven", fields: [userId], references: [id], onDelete: Cascade)
+  message       String?
+  createdAt     DateTime    @default(now())
+
+  @@unique([achievementId, userId])
 }
 
 // Activity feed for the Career Tools hub. Each row is one interaction
