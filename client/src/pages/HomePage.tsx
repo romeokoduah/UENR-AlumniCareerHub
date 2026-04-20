@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
@@ -166,12 +167,7 @@ export default function HomePage() {
               className="group relative overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--card)]"
             >
               <div className="relative aspect-[4/5] overflow-hidden">
-                <img
-                  src={a.photo}
-                  alt={a.name}
-                  className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
-                  loading="lazy"
-                />
+                <SmoothImage src={a.photo} alt={a.name} className="absolute inset-0" />
                 <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
                 <div className="absolute inset-x-0 bottom-0 p-5 text-white">
                   <div className="font-heading text-xl font-bold leading-tight">{a.name}</div>
@@ -228,7 +224,7 @@ export default function HomePage() {
             className="relative"
           >
             <div className="relative overflow-hidden rounded-3xl">
-              <img src={STORY_PHOTO} alt="UENR students collaborating" className="h-[520px] w-full object-cover" loading="lazy" />
+              <SmoothImage src={STORY_PHOTO} alt="UENR students collaborating" className="h-[520px] w-full" />
               <div className="absolute inset-0 bg-gradient-to-tr from-[#065F46]/40 to-transparent" />
             </div>
             <div className="absolute -bottom-6 -right-6 hidden rounded-2xl border-4 border-[var(--bg)] bg-[#F59E0B] p-6 md:block">
@@ -374,8 +370,47 @@ function PhotoTile({ src, className, accent }: { src: string; className: string;
       className={`overflow-hidden rounded-2xl border-[6px] border-[var(--bg)] shadow-xl ${className}`}
       style={{ boxShadow: `0 20px 50px -20px ${accent}55, 0 8px 20px -8px rgba(0,0,0,0.25)` }}
     >
-      <img src={src} alt="" className="h-full w-full object-cover" loading="eager" />
+      <SmoothImage src={src} alt="" className="h-full w-full object-cover" eager />
     </motion.div>
+  );
+}
+
+function SmoothImage({
+  src, alt = '', className = '', eager = false
+}: { src: string; alt?: string; className?: string; eager?: boolean }) {
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const ready = loadedSrc === src;
+
+  useEffect(() => {
+    if (!src) return;
+    let cancelled = false;
+    const img = new Image();
+    img.src = src;
+    const done = () => { if (!cancelled) setLoadedSrc(src); };
+    if (img.complete && img.naturalWidth > 0) {
+      done();
+    } else {
+      img.onload = done;
+      img.onerror = done;
+    }
+    return () => { cancelled = true; };
+  }, [src]);
+
+  return (
+    <div className={`relative ${className}`}>
+      <div
+        aria-hidden
+        className={`absolute inset-0 bg-[var(--card)] transition-opacity duration-300 ${ready ? 'opacity-0' : 'opacity-100 animate-pulse'}`}
+      />
+      {ready && (
+        <img
+          src={src}
+          alt={alt}
+          loading={eager ? 'eager' : 'lazy'}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      )}
+    </div>
   );
 }
 
