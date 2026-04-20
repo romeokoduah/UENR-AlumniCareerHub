@@ -136,30 +136,37 @@ model User {
   transcriptRequests  TranscriptRequest[]
   achievements        Achievement[]
   congratsGiven       AchievementCongrats[] @relation("CongratsGiven")
+  candidateNotes      CandidateNote[]       @relation("ApplicationNotes")
+  pooledCandidates    TalentPoolEntry[]     @relation("PooledCandidates")
+  talentPoolOwners    TalentPoolEntry[]     @relation("TalentPoolOwners")
 }
 
 model Opportunity {
-  id              String          @id @default(cuid())
-  title           String
-  description     String
-  company         String
-  location        String
-  locationType    LocationType    @default(ONSITE)
-  type            OpportunityType
-  salaryMin       Int?
-  salaryMax       Int?
-  currency        String          @default("GHS")
-  deadline        DateTime
-  requiredSkills  String[]        @default([])
-  industry        String?
-  experienceLevel String?
-  applicationUrl  String?
-  postedById      String
-  postedBy        User            @relation("PostedOpportunities", fields: [postedById], references: [id], onDelete: Cascade)
-  isApproved      Boolean         @default(true)
-  isActive        Boolean         @default(true)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  id                String          @id @default(cuid())
+  title             String
+  description       String
+  company           String
+  location          String
+  locationType      LocationType    @default(ONSITE)
+  type              OpportunityType
+  salaryMin         Int?
+  salaryMax         Int?
+  currency          String          @default("GHS")
+  deadline          DateTime
+  requiredSkills    String[]        @default([])
+  preferredSkills   String[]        @default([])
+  industry          String?
+  experienceLevel   String?
+  applicationUrl    String?
+  postedById        String
+  postedBy          User            @relation("PostedOpportunities", fields: [postedById], references: [id], onDelete: Cascade)
+  isApproved        Boolean         @default(true)
+  isActive          Boolean         @default(true)
+  isFeatured        Boolean         @default(false)
+  customQuestions   Json?
+  anonymousApplications Boolean     @default(false)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
   applications Application[]
   bookmarks    Bookmark[]
@@ -169,18 +176,54 @@ model Opportunity {
 }
 
 model Application {
-  id            String            @id @default(cuid())
-  userId        String
-  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  opportunityId String
-  opportunity   Opportunity       @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
-  cvUrl         String?
-  coverLetter   String?
-  status        ApplicationStatus @default(APPLIED)
-  appliedAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  id                       String            @id @default(cuid())
+  userId                   String
+  user                     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  opportunityId            String
+  opportunity              Opportunity       @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  cvUrl                    String?
+  coverLetter              String?
+  status                   ApplicationStatus @default(APPLIED)
+  // ATS extension fields (added in Phase 6, all nullable / defaulted for
+  // backward compatibility with the existing apply flow):
+  customAnswers            Json?
+  recruiterScore           Float?
+  recruiterScoreBreakdown  Json?
+  appliedAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
+
+  notes CandidateNote[]
 
   @@unique([userId, opportunityId])
+  @@index([opportunityId, status])
+}
+
+// Recruiter-side notes on applications, ordered chronologically.
+model CandidateNote {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  authorId      String
+  author        User        @relation("ApplicationNotes", fields: [authorId], references: [id], onDelete: Cascade)
+  body          String
+  createdAt     DateTime    @default(now())
+
+  @@index([applicationId, createdAt(sort: Desc)])
+}
+
+// Talent pool: candidates an employer has saved for future roles.
+model TalentPoolEntry {
+  id          String   @id @default(cuid())
+  candidateId String
+  candidate   User     @relation("PooledCandidates", fields: [candidateId], references: [id], onDelete: Cascade)
+  ownerId     String
+  owner       User     @relation("TalentPoolOwners", fields: [ownerId], references: [id], onDelete: Cascade)
+  notes       String?
+  tags        String[] @default([])
+  createdAt   DateTime @default(now())
+
+  @@unique([candidateId, ownerId])
+  @@index([ownerId, createdAt(sort: Desc)])
 }
 
 model Bookmark {
