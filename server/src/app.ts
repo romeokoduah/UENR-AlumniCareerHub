@@ -42,6 +42,9 @@ import interviewQuestionRoutes from './routes/interviewQuestions.js';
 import mockInterviewRoutes from './routes/mockInterviews.js';
 import aptitudeRoutes from './routes/aptitude.js';
 import salaryRoutes from './routes/salary.js';
+import startupRoutes from './routes/startup.js';
+import freelanceRoutes from './routes/freelance.js';
+import bizRegRoutes from './routes/bizReg.js';
 import adminRoutes from './routes/admin.js';
 import contentRoutes from './routes/content.js';
 import { UPLOAD_DIR } from './lib/upload.js';
@@ -88,6 +91,9 @@ export function createApp() {
   app.use('/api/mock-interviews', mockInterviewRoutes);
   app.use('/api/aptitude', aptitudeRoutes);
   app.use('/api/salary', salaryRoutes);
+  app.use('/api/startup', startupRoutes);
+  app.use('/api/freelance', freelanceRoutes);
+  app.use('/api/biz-reg', bizRegRoutes);
   app.use('/api/content', contentRoutes);
   app.use('/api/admin', adminRoutes);
 

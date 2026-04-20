@@ -161,16 +161,16 @@ export const CAREER_TOOLS: CareerTool[] = [
     category: 'ventures',
     icon: Rocket,
     phase: 4,
-    status: 'coming-soon'
+    status: 'live'
   },
   {
     slug: 'ventures/freelance',
     name: 'Freelance Project Board',
-    description: 'Post and bid on alumni gigs. Paid via Mobile Money (MoMo, Vodafone Cash, AirtelTigo).',
+    description: 'Post and bid on alumni gigs. Off-platform payment for v1; escrow + MoMo coming soon.',
     category: 'ventures',
     icon: Briefcase,
     phase: 4,
-    status: 'coming-soon'
+    status: 'live'
   },
   {
     slug: 'ventures/registration',
@@ -179,7 +179,7 @@ export const CAREER_TOOLS: CareerTool[] = [
     category: 'ventures',
     icon: Building2,
     phase: 4,
-    status: 'coming-soon'
+    status: 'live'
   },
 
   // ===== Support =====

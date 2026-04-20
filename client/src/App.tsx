@@ -37,6 +37,9 @@ const InterviewQuestionBankPage = lazy(() => import('./pages/career-tools/Interv
 const MockInterviewPage = lazy(() => import('./pages/career-tools/MockInterviewPage'));
 const AptitudePage = lazy(() => import('./pages/career-tools/AptitudePage'));
 const SalaryNegotiationPage = lazy(() => import('./pages/career-tools/SalaryNegotiationPage'));
+const StartupResourcesPage = lazy(() => import('./pages/career-tools/StartupResourcesPage'));
+const FreelancePage = lazy(() => import('./pages/career-tools/FreelancePage'));
+const BusinessRegistrationPage = lazy(() => import('./pages/career-tools/BusinessRegistrationPage'));
 const AdminLearningModerationPage = lazy(() => import('./pages/admin/AdminLearningModerationPage'));
 const PublicPortfolioPage = lazy(() => import('./pages/PublicPortfolioPage'));
 const PublicShareViewerPage = lazy(() => import('./pages/PublicShareViewerPage'));
@@ -90,6 +93,9 @@ export default function App() {
           <Route path="career-tools/interview/mock" element={<RequireAuth><MockInterviewPage /></RequireAuth>} />
           <Route path="career-tools/aptitude" element={<RequireAuth><AptitudePage /></RequireAuth>} />
           <Route path="career-tools/salary" element={<RequireAuth><SalaryNegotiationPage /></RequireAuth>} />
+          <Route path="career-tools/ventures/startup" element={<RequireAuth><StartupResourcesPage /></RequireAuth>} />
+          <Route path="career-tools/ventures/freelance" element={<RequireAuth><FreelancePage /></RequireAuth>} />
+          <Route path="career-tools/ventures/registration" element={<RequireAuth><BusinessRegistrationPage /></RequireAuth>} />
           <Route path="career-tools/*" element={<RequireAuth><CareerToolPlaceholderPage /></RequireAuth>} />
 
           <Route path="profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
