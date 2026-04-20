@@ -33,6 +33,11 @@ import careerToolsRoutes from './routes/careerTools.js';
 import coverLetterRoutes from './routes/coverLetters.js';
 import portfolioRoutes from './routes/portfolios.js';
 import vaultRoutes from './routes/vault.js';
+import skillsRoutes from './routes/skills.js';
+import learningRoutes from './routes/learning.js';
+import certificationsRoutes from './routes/certifications.js';
+import pathsRoutes from './routes/paths.js';
+import pathAlumniRoutes from './routes/pathAlumni.js';
 import adminRoutes from './routes/admin.js';
 import contentRoutes from './routes/content.js';
 import { UPLOAD_DIR } from './lib/upload.js';
@@ -70,6 +75,11 @@ export function createApp() {
   app.use('/api/cover-letters', coverLetterRoutes);
   app.use('/api/portfolios', portfolioRoutes);
   app.use('/api/vault', vaultRoutes);
+  app.use('/api/skills', skillsRoutes);
+  app.use('/api/learning', learningRoutes);
+  app.use('/api/certifications', certificationsRoutes);
+  app.use('/api/paths', pathsRoutes);
+  app.use('/api/path-alumni', pathAlumniRoutes);
   app.use('/api/content', contentRoutes);
   app.use('/api/admin', adminRoutes);
 

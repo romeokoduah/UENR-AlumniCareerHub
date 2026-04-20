@@ -29,8 +29,14 @@ const CoverLetterPage = lazy(() => import('./pages/career-tools/CoverLetterPage'
 const CoverLetterPrintPage = lazy(() => import('./pages/career-tools/CoverLetterPrintPage'));
 const PortfolioEditorPage = lazy(() => import('./pages/career-tools/PortfolioEditorPage'));
 const VaultPage = lazy(() => import('./pages/career-tools/VaultPage'));
+const SkillsAssessmentPage = lazy(() => import('./pages/career-tools/SkillsAssessmentPage'));
+const LearningHubPage = lazy(() => import('./pages/career-tools/LearningHubPage'));
+const CertificationsPage = lazy(() => import('./pages/career-tools/CertificationsPage'));
+const CareerPathsPage = lazy(() => import('./pages/career-tools/CareerPathsPage'));
+const AdminLearningModerationPage = lazy(() => import('./pages/admin/AdminLearningModerationPage'));
 const PublicPortfolioPage = lazy(() => import('./pages/PublicPortfolioPage'));
 const PublicShareViewerPage = lazy(() => import('./pages/PublicShareViewerPage'));
+const PublicCertVerifyPage = lazy(() => import('./pages/PublicCertVerifyPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 export default function App() {
@@ -43,6 +49,7 @@ export default function App() {
         {/* Public, full-bleed routes (no Navbar/Footer chrome) */}
         <Route path="/p/:slug" element={<PublicPortfolioPage />} />
         <Route path="/v/:token" element={<PublicShareViewerPage />} />
+        <Route path="/verify/cert/:slug" element={<PublicCertVerifyPage />} />
         <Route
           path="/career-tools/cover-letter/print/:id"
           element={<RequireAuth><CoverLetterPrintPage /></RequireAuth>}
@@ -71,12 +78,17 @@ export default function App() {
           <Route path="career-tools/cover-letter" element={<RequireAuth><CoverLetterPage /></RequireAuth>} />
           <Route path="career-tools/portfolio" element={<RequireAuth><PortfolioEditorPage /></RequireAuth>} />
           <Route path="career-tools/vault" element={<RequireAuth><VaultPage /></RequireAuth>} />
+          <Route path="career-tools/skills" element={<RequireAuth><SkillsAssessmentPage /></RequireAuth>} />
+          <Route path="career-tools/learn" element={<RequireAuth><LearningHubPage /></RequireAuth>} />
+          <Route path="career-tools/certifications" element={<RequireAuth><CertificationsPage /></RequireAuth>} />
+          <Route path="career-tools/paths" element={<RequireAuth><CareerPathsPage /></RequireAuth>} />
           <Route path="career-tools/*" element={<RequireAuth><CareerToolPlaceholderPage /></RequireAuth>} />
 
           <Route path="profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
           <Route path="admin" element={<RequireAuth roles={['ADMIN']}><AdminPage /></RequireAuth>} />
           <Route path="admin/opportunities" element={<RequireAuth roles={['ADMIN']}><AdminOpportunitiesPage /></RequireAuth>} />
           <Route path="admin/landing" element={<RequireAuth roles={['ADMIN']}><AdminLandingEditorPage /></RequireAuth>} />
+          <Route path="admin/learning" element={<RequireAuth roles={['ADMIN']}><AdminLearningModerationPage /></RequireAuth>} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

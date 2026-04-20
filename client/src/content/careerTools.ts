@@ -85,7 +85,7 @@ export const CAREER_TOOLS: CareerTool[] = [
     category: 'skills',
     icon: Target,
     phase: 2,
-    status: 'coming-soon'
+    status: 'live'
   },
   {
     slug: 'learn',
@@ -94,7 +94,7 @@ export const CAREER_TOOLS: CareerTool[] = [
     category: 'skills',
     icon: BookOpen,
     phase: 2,
-    status: 'coming-soon'
+    status: 'live'
   },
   {
     slug: 'certifications',
@@ -103,7 +103,7 @@ export const CAREER_TOOLS: CareerTool[] = [
     category: 'skills',
     icon: Award,
     phase: 2,
-    status: 'coming-soon'
+    status: 'live'
   },
   {
     slug: 'paths',
@@ -112,7 +112,7 @@ export const CAREER_TOOLS: CareerTool[] = [
     category: 'skills',
     icon: Map,
     phase: 2,
-    status: 'coming-soon'
+    status: 'live'
   },
 
   // ===== Interview Prep =====
