@@ -190,7 +190,7 @@ export const CAREER_TOOLS: CareerTool[] = [
     category: 'support',
     icon: HeartHandshake,
     phase: 5,
-    status: 'coming-soon'
+    status: 'live'
   },
   {
     slug: 'transcripts',
@@ -199,7 +199,7 @@ export const CAREER_TOOLS: CareerTool[] = [
     category: 'support',
     icon: FileSearch,
     phase: 5,
-    status: 'coming-soon'
+    status: 'live'
   },
   {
     slug: 'achievements',
@@ -208,7 +208,7 @@ export const CAREER_TOOLS: CareerTool[] = [
     category: 'support',
     icon: Trophy,
     phase: 5,
-    status: 'coming-soon'
+    status: 'live'
   },
 
   // ===== Employers =====

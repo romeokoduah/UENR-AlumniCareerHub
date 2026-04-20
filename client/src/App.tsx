@@ -40,7 +40,12 @@ const SalaryNegotiationPage = lazy(() => import('./pages/career-tools/SalaryNego
 const StartupResourcesPage = lazy(() => import('./pages/career-tools/StartupResourcesPage'));
 const FreelancePage = lazy(() => import('./pages/career-tools/FreelancePage'));
 const BusinessRegistrationPage = lazy(() => import('./pages/career-tools/BusinessRegistrationPage'));
+const CounselingPage = lazy(() => import('./pages/career-tools/CounselingPage'));
+const TranscriptsPage = lazy(() => import('./pages/career-tools/TranscriptsPage'));
+const AchievementsWallPage = lazy(() => import('./pages/career-tools/AchievementsWallPage'));
 const AdminLearningModerationPage = lazy(() => import('./pages/admin/AdminLearningModerationPage'));
+const AdminAchievementsModerationPage = lazy(() => import('./pages/admin/AdminAchievementsModerationPage'));
+const PublicTranscriptVerifyPage = lazy(() => import('./pages/PublicTranscriptVerifyPage'));
 const PublicPortfolioPage = lazy(() => import('./pages/PublicPortfolioPage'));
 const PublicShareViewerPage = lazy(() => import('./pages/PublicShareViewerPage'));
 const PublicCertVerifyPage = lazy(() => import('./pages/PublicCertVerifyPage'));
@@ -57,6 +62,7 @@ export default function App() {
         <Route path="/p/:slug" element={<PublicPortfolioPage />} />
         <Route path="/v/:token" element={<PublicShareViewerPage />} />
         <Route path="/verify/cert/:slug" element={<PublicCertVerifyPage />} />
+        <Route path="/verify/transcript/:token" element={<PublicTranscriptVerifyPage />} />
         <Route
           path="/career-tools/cover-letter/print/:id"
           element={<RequireAuth><CoverLetterPrintPage /></RequireAuth>}
@@ -96,6 +102,9 @@ export default function App() {
           <Route path="career-tools/ventures/startup" element={<RequireAuth><StartupResourcesPage /></RequireAuth>} />
           <Route path="career-tools/ventures/freelance" element={<RequireAuth><FreelancePage /></RequireAuth>} />
           <Route path="career-tools/ventures/registration" element={<RequireAuth><BusinessRegistrationPage /></RequireAuth>} />
+          <Route path="career-tools/counseling" element={<RequireAuth><CounselingPage /></RequireAuth>} />
+          <Route path="career-tools/transcripts" element={<RequireAuth><TranscriptsPage /></RequireAuth>} />
+          <Route path="career-tools/achievements" element={<RequireAuth><AchievementsWallPage /></RequireAuth>} />
           <Route path="career-tools/*" element={<RequireAuth><CareerToolPlaceholderPage /></RequireAuth>} />
 
           <Route path="profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
@@ -103,6 +112,7 @@ export default function App() {
           <Route path="admin/opportunities" element={<RequireAuth roles={['ADMIN']}><AdminOpportunitiesPage /></RequireAuth>} />
           <Route path="admin/landing" element={<RequireAuth roles={['ADMIN']}><AdminLandingEditorPage /></RequireAuth>} />
           <Route path="admin/learning" element={<RequireAuth roles={['ADMIN']}><AdminLearningModerationPage /></RequireAuth>} />
+          <Route path="admin/achievements" element={<RequireAuth roles={['ADMIN']}><AdminAchievementsModerationPage /></RequireAuth>} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

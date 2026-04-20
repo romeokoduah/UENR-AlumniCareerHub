@@ -45,6 +45,9 @@ import salaryRoutes from './routes/salary.js';
 import startupRoutes from './routes/startup.js';
 import freelanceRoutes from './routes/freelance.js';
 import bizRegRoutes from './routes/bizReg.js';
+import counselingRoutes from './routes/counseling.js';
+import transcriptsRoutes from './routes/transcripts.js';
+import achievementsRoutes from './routes/achievements.js';
 import adminRoutes from './routes/admin.js';
 import contentRoutes from './routes/content.js';
 import { UPLOAD_DIR } from './lib/upload.js';
@@ -94,6 +97,9 @@ export function createApp() {
   app.use('/api/startup', startupRoutes);
   app.use('/api/freelance', freelanceRoutes);
   app.use('/api/biz-reg', bizRegRoutes);
+  app.use('/api/counseling', counselingRoutes);
+  app.use('/api/transcripts', transcriptsRoutes);
+  app.use('/api/achievements', achievementsRoutes);
   app.use('/api/content', contentRoutes);
   app.use('/api/admin', adminRoutes);
 
