@@ -100,6 +100,11 @@ model User {
   isSuperuser      Boolean  @default(false)
   profileComplete  Boolean  @default(false)
   visibility       String   @default("members")
+  suspendedAt      DateTime?
+  deletedAt        DateTime?
+  passwordResetToken      String?   @unique
+  passwordResetExpiresAt  DateTime?
+  tokenVersion     Int      @default(0)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
