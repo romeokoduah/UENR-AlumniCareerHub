@@ -125,6 +125,8 @@ model User {
   learningProgress    LearningProgress[]
   certifications      Certification[]
   resourcesSubmitted  LearningResource[]  @relation("SubmittedResources")
+  questionVotes       InterviewQuestionVote[]
+  aptitudeAttempts    AptitudeAttempt[]
 }
 
 model Opportunity {
@@ -251,6 +253,10 @@ model Session {
   mentorFeedback String?
   menteeFeedback String?
   meetingUrl     String?
+  // Mock-interview metadata when this session was booked via the Career
+  // Tools mock-interview scheduler. Keys: type (BEHAVIORAL|TECHNICAL|
+  // PANEL|CASE), focusArea, seniorityTarget, language, rubric.
+  mockMeta       Json?
 }
 
 model Event {
@@ -620,6 +626,148 @@ model CareerPathNode {
   createdAt      DateTime @default(now())
 
   @@index([industry, level])
+}
+
+// ===== Phase 3: Interview Prep =====
+
+enum InterviewCategory {
+  BEHAVIORAL
+  TECHNICAL
+  DOMAIN
+  CASE
+  SITUATIONAL
+}
+
+enum InterviewDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+// Question bank — curated + community-submitted prompts. `roleSlug` is
+// optional and references RoleProfile.slug when the question is bound
+// to a particular target role.
+model InterviewQuestion {
+  id             String              @id @default(cuid())
+  prompt         String
+  guidance       String?
+  sampleAnswer   String?
+  category       InterviewCategory
+  difficulty     InterviewDifficulty @default(MEDIUM)
+  roleSlug       String?
+  industry       String?
+  tags           String[]            @default([])
+  upvotes        Int                 @default(0)
+  flagCount      Int                 @default(0)
+  isApproved     Boolean             @default(true)
+  submittedById  String?
+  createdAt      DateTime            @default(now())
+
+  votes InterviewQuestionVote[]
+
+  @@index([category, difficulty, isApproved])
+  @@index([roleSlug])
+}
+
+model InterviewQuestionVote {
+  id         String            @id @default(cuid())
+  questionId String
+  question   InterviewQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime          @default(now())
+
+  @@unique([questionId, userId])
+}
+
+// Aptitude practice. Multiple-choice with single correct answer; the
+// `attempt` model groups answers from one practice or mock-test run.
+enum AptitudeCategory {
+  GMAT_VERBAL
+  GMAT_QUANT
+  GRE_VERBAL
+  GRE_QUANT
+  GHANA_CIVIL_SERVICE
+  CONSULTING_CASE
+  NUMERICAL
+  LOGICAL
+}
+
+model AptitudeQuestion {
+  id               String           @id @default(cuid())
+  category         AptitudeCategory
+  prompt           String
+  options          String[]
+  correctIndex     Int
+  explanation      String
+  difficulty       Int              @default(2)
+  estimatedSeconds Int              @default(60)
+  createdAt        DateTime         @default(now())
+
+  @@index([category, difficulty])
+}
+
+model AptitudeAttempt {
+  id           String                  @id @default(cuid())
+  userId       String
+  user         User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category     AptitudeCategory
+  isMock       Boolean                 @default(false)
+  startedAt    DateTime                @default(now())
+  completedAt  DateTime?
+  totalSeconds Int?
+  score        Int?
+
+  answers AptitudeAttemptAnswer[]
+
+  @@index([userId, completedAt(sort: Desc)])
+}
+
+model AptitudeAttemptAnswer {
+  id            String          @id @default(cuid())
+  attemptId     String
+  attempt       AptitudeAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId    String
+  selectedIndex Int?
+  isCorrect     Boolean         @default(false)
+  timeSpentSec  Int             @default(0)
+
+  @@index([attemptId])
+}
+
+// Salary benchmarks — one row per (role × seniority × city × currency).
+// All amounts are MONTHLY in the row's currency.
+model SalaryBenchmark {
+  id          String   @id @default(cuid())
+  role        String
+  seniority   String
+  city        String
+  country     String
+  currency    String
+  minMonthly  Int
+  maxMonthly  Int
+  source      String?
+  notes       String?
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@index([role, seniority])
+  @@index([country, city])
+}
+
+// Cost-of-living for the negotiation calculator. One row per city.
+model CityCostOfLiving {
+  id               String   @id @default(cuid())
+  city             String   @unique
+  country          String
+  currency         String
+  rentMonthly      Int
+  groceriesMonthly Int
+  transportMonthly Int
+  utilitiesMonthly Int
+  totalMonthly     Int
+  notes            String?
+  updatedAt        DateTime @updatedAt
 }
 
 // Activity feed for the Career Tools hub. Each row is one interaction
