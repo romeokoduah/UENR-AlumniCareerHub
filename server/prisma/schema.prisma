@@ -121,6 +121,10 @@ model User {
   coverLetters        CoverLetter[]
   portfolios          Portfolio[]
   vaultDocuments      VaultDocument[]
+  skillAssessments    SkillAssessment[]
+  learningProgress    LearningProgress[]
+  certifications      Certification[]
+  resourcesSubmitted  LearningResource[]  @relation("SubmittedResources")
 }
 
 model Opportunity {
@@ -465,6 +469,157 @@ model VaultAccessLog {
   createdAt DateTime       @default(now())
 
   @@index([shareId, createdAt(sort: Desc)])
+}
+
+// ===== Phase 2: Skills & Growth =====
+
+// Curated skill taxonomy. Hand-seeded for v1 with the most common
+// engineering / energy / business / data skills relevant to UENR
+// programmes. Synonyms power fuzzy match in the role-targeting helper
+// and (later) the ATS resume parser.
+model Skill {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  category  String
+  synonyms  String[] @default([])
+  createdAt DateTime @default(now())
+
+  @@index([category])
+}
+
+// Target roles users can self-assess against. Each lists the skills
+// the role expects so we can compute a readiness % from the user's
+// 1-5 ratings.
+model RoleProfile {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  name            String
+  description     String?
+  category        String
+  requiredSkills  String[] @default([])
+  preferredSkills String[] @default([])
+  createdAt       DateTime @default(now())
+
+  @@index([category])
+}
+
+// One row per assessment a user completes. Stores the user's 1-5
+// ratings as JSON keyed by skill name and the computed readiness %.
+model SkillAssessment {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleSlug    String
+  ratings     Json
+  readiness   Float    @default(0)
+  completedAt DateTime @default(now())
+
+  @@index([userId, completedAt(sort: Desc)])
+}
+
+enum LearningType {
+  COURSE
+  VIDEO
+  BOOK
+  ARTICLE
+  PODCAST
+}
+
+enum LearningLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum LearningCost {
+  FREE
+  PAID
+  FREEMIUM
+}
+
+// Curated + user-submitted learning resources. `isApproved=false` for
+// user submissions until an admin approves; curated seed defaults true.
+model LearningResource {
+  id            String        @id @default(cuid())
+  title         String
+  provider      String
+  url           String
+  type          LearningType
+  level         LearningLevel
+  cost          LearningCost
+  language      String        @default("English")
+  durationMin   Int?
+  skills        String[]      @default([])
+  description   String?
+  submittedById String?
+  submittedBy   User?         @relation("SubmittedResources", fields: [submittedById], references: [id], onDelete: SetNull)
+  isApproved    Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+
+  @@index([type, level, isApproved])
+  @@index([cost, isApproved])
+}
+
+// Curated learning paths — ordered sequences of resource ids with
+// optional notes on each step.
+model LearningPath {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  description String
+  steps       Json
+  createdAt   DateTime @default(now())
+}
+
+// Per-user learning progress on individual resources.
+model LearningProgress {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resourceId  String
+  status      String    @default("IN_PROGRESS")
+  completedAt DateTime?
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, resourceId])
+}
+
+// User-tracked certifications with issue + expiry dates and an
+// optional VaultDocument back-reference for the cert PDF.
+model Certification {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  issuer        String
+  issueDate     DateTime
+  expiryDate    DateTime?
+  credentialUrl String?
+  vaultDocId    String?
+  publicSlug    String?   @unique
+  createdAt     DateTime  @default(now())
+
+  @@index([userId, expiryDate])
+}
+
+// Career path nodes seeded with UENR-relevant roles. Edges to typical
+// next roles are stored as a string array of node slugs to keep the
+// model simple — bidirectional traversal happens client-side.
+model CareerPathNode {
+  id             String   @id @default(cuid())
+  slug           String   @unique
+  role           String
+  level          String
+  industry       String
+  salaryGhsMin   Int?
+  salaryGhsMax   Int?
+  yearsTypical   Int      @default(2)
+  description    String?
+  requiredSkills String[] @default([])
+  nextNodeSlugs  String[] @default([])
+  createdAt      DateTime @default(now())
+
+  @@index([industry, level])
 }
 
 // Activity feed for the Career Tools hub. Each row is one interaction
