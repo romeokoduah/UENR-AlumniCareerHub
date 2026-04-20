@@ -50,6 +50,13 @@ import transcriptsRoutes from './routes/transcripts.js';
 import achievementsRoutes from './routes/achievements.js';
 import atsRoutes from './routes/ats.js';
 import adminRoutes from './routes/admin.js';
+import adminModerationRoutes from './routes/adminModeration.js';
+import adminInsightsRoutes from './routes/adminInsights.js';
+import adminDataRoutes from './routes/adminData.js';
+import adminServicesRoutes from './routes/adminServices.js';
+import adminAtsOversightRoutes from './routes/adminAtsOversight.js';
+import adminSiteRoutes from './routes/adminSite.js';
+import adminSystemRoutes from './routes/adminSystem.js';
 import contentRoutes from './routes/content.js';
 import { UPLOAD_DIR } from './lib/upload.js';
 
@@ -104,6 +111,13 @@ export function createApp() {
   app.use('/api/ats', atsRoutes);
   app.use('/api/content', contentRoutes);
   app.use('/api/admin', adminRoutes);
+  app.use('/api/admin/moderation', adminModerationRoutes);
+  app.use('/api/admin/insights', adminInsightsRoutes);
+  app.use('/api/admin/data', adminDataRoutes);
+  app.use('/api/admin/services', adminServicesRoutes);
+  app.use('/api/admin/ats-oversight', adminAtsOversightRoutes);
+  app.use('/api/admin/site', adminSiteRoutes);
+  app.use('/api/admin/system', adminSystemRoutes);
 
   app.use(errorHandler);
 

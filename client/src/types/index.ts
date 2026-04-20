@@ -19,6 +19,9 @@ export type User = {
   profileComplete?: boolean;
   isApproved?: boolean;
   isSuperuser?: boolean;
+  // Set when this session was minted by a superuser impersonating
+  // someone — drives the sticky red banner + "End impersonation" button.
+  actingAs?: { adminId: string };
 };
 
 export type Opportunity = {

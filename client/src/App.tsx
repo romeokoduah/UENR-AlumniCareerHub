@@ -51,6 +51,13 @@ const AdminLearningModerationPage = lazy(() => import('./pages/admin/AdminLearni
 const AdminAchievementsModerationPage = lazy(() => import('./pages/admin/AdminAchievementsModerationPage'));
 const AdminUsersPage = lazy(() => import('./pages/admin/AdminUsersPage'));
 const AdminPlaceholderPage = lazy(() => import('./pages/admin/AdminPlaceholderPage'));
+const AdminModerationPage = lazy(() => import('./pages/admin/AdminModerationPage'));
+const AdminInsightsPage = lazy(() => import('./pages/admin/AdminInsightsPage'));
+const AdminDataPage = lazy(() => import('./pages/admin/AdminDataPage'));
+const AdminServicesPage = lazy(() => import('./pages/admin/AdminServicesPage'));
+const AdminAtsOversightPage = lazy(() => import('./pages/admin/AdminAtsOversightPage'));
+const AdminSitePage = lazy(() => import('./pages/admin/AdminSitePage'));
+const AdminSystemPage = lazy(() => import('./pages/admin/AdminSystemPage'));
 const PublicTranscriptVerifyPage = lazy(() => import('./pages/PublicTranscriptVerifyPage'));
 const PublicPortfolioPage = lazy(() => import('./pages/PublicPortfolioPage'));
 const PublicShareViewerPage = lazy(() => import('./pages/PublicShareViewerPage'));
@@ -126,13 +133,13 @@ export default function App() {
             <Route path="landing" element={<AdminLandingEditorPage />} />
             <Route path="learning" element={<AdminLearningModerationPage />} />
             <Route path="achievements" element={<AdminAchievementsModerationPage />} />
-            <Route path="moderation" element={<AdminPlaceholderPage />} />
-            <Route path="data" element={<AdminPlaceholderPage />} />
-            <Route path="services" element={<AdminPlaceholderPage />} />
-            <Route path="ats" element={<AdminPlaceholderPage />} />
-            <Route path="site" element={<AdminPlaceholderPage />} />
-            <Route path="insights" element={<AdminPlaceholderPage />} />
-            <Route path="system" element={<AdminPlaceholderPage />} />
+            <Route path="moderation" element={<AdminModerationPage />} />
+            <Route path="data" element={<AdminDataPage />} />
+            <Route path="services" element={<AdminServicesPage />} />
+            <Route path="ats" element={<AdminAtsOversightPage />} />
+            <Route path="site" element={<AdminSitePage />} />
+            <Route path="insights" element={<AdminInsightsPage />} />
+            <Route path="system" element={<AdminSystemPage />} />
           </Route>
           <Route path="*" element={<NotFoundPage />} />
         </Route>

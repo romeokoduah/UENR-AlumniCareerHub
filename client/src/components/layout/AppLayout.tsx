@@ -5,6 +5,7 @@ import { Navbar } from './Navbar';
 import { MobileTabBar } from './MobileTabBar';
 import { Footer } from './Footer';
 import { useThemeStore } from '../../store/theme';
+import { ImpersonationBanner } from '../admin/ImpersonationBanner';
 
 export function AppLayout() {
   const location = useLocation();
@@ -13,6 +14,8 @@ export function AppLayout() {
 
   return (
     <div className="flex min-h-screen flex-col">
+      {/* Sticky red bar — only renders when the current session is an impersonation. */}
+      <ImpersonationBanner />
       <Navbar />
       <main className="flex-1 pb-20 md:pb-0">
         <AnimatePresence mode="wait">
