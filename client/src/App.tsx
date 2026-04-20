@@ -30,6 +30,7 @@ const CoverLetterPage = lazy(() => import('./pages/career-tools/CoverLetterPage'
 const CoverLetterPrintPage = lazy(() => import('./pages/career-tools/CoverLetterPrintPage'));
 const PortfolioEditorPage = lazy(() => import('./pages/career-tools/PortfolioEditorPage'));
 const VaultPage = lazy(() => import('./pages/career-tools/VaultPage'));
+const CvMatchPage = lazy(() => import('./pages/career-tools/CvMatchPage'));
 const SkillsAssessmentPage = lazy(() => import('./pages/career-tools/SkillsAssessmentPage'));
 const LearningHubPage = lazy(() => import('./pages/career-tools/LearningHubPage'));
 const CertificationsPage = lazy(() => import('./pages/career-tools/CertificationsPage'));
@@ -104,6 +105,7 @@ export default function App() {
           <Route path="career-tools/cover-letter" element={<RequireAuth><CoverLetterPage /></RequireAuth>} />
           <Route path="career-tools/portfolio" element={<RequireAuth><PortfolioEditorPage /></RequireAuth>} />
           <Route path="career-tools/vault" element={<RequireAuth><VaultPage /></RequireAuth>} />
+          <Route path="career-tools/cv-match" element={<RequireAuth><CvMatchPage /></RequireAuth>} />
           <Route path="career-tools/skills" element={<RequireAuth><SkillsAssessmentPage /></RequireAuth>} />
           <Route path="career-tools/learn" element={<RequireAuth><LearningHubPage /></RequireAuth>} />
           <Route path="career-tools/certifications" element={<RequireAuth><CertificationsPage /></RequireAuth>} />

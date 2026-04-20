@@ -1,5 +1,5 @@
 import {
-  FileText, Mail, Layout, Lock,
+  FileText, Mail, Layout, Lock, Crosshair,
   Target, BookOpen, Award, Map,
   MessageSquare, Calendar, Brain, DollarSign,
   Rocket, Briefcase, Building2,
@@ -73,6 +73,15 @@ export const CAREER_TOOLS: CareerTool[] = [
     description: 'Secure storage for transcripts, certificates, references — share with expiry and view caps.',
     category: 'application-materials',
     icon: Lock,
+    phase: 1,
+    status: 'live'
+  },
+  {
+    slug: 'cv-match',
+    name: 'CV Match',
+    description: 'Drop a CV + a job description. See your match score the way an ATS sees it, plus a checklist of edits before you apply.',
+    category: 'application-materials',
+    icon: Crosshair,
     phase: 1,
     status: 'live'
   },

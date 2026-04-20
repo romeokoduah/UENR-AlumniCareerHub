@@ -49,6 +49,7 @@ import counselingRoutes from './routes/counseling.js';
 import transcriptsRoutes from './routes/transcripts.js';
 import achievementsRoutes from './routes/achievements.js';
 import atsRoutes from './routes/ats.js';
+import cvMatchRoutes from './routes/cvMatch.js';
 import adminRoutes from './routes/admin.js';
 import adminModerationRoutes from './routes/adminModeration.js';
 import adminInsightsRoutes from './routes/adminInsights.js';
@@ -109,6 +110,7 @@ export function createApp() {
   app.use('/api/transcripts', transcriptsRoutes);
   app.use('/api/achievements', achievementsRoutes);
   app.use('/api/ats', atsRoutes);
+  app.use('/api/cv-match', cvMatchRoutes);
   app.use('/api/content', contentRoutes);
   app.use('/api/admin', adminRoutes);
   app.use('/api/admin/moderation', adminModerationRoutes);

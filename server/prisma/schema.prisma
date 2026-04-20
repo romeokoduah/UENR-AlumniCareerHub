@@ -147,6 +147,7 @@ model User {
   talentPoolOwners    TalentPoolEntry[]     @relation("TalentPoolOwners")
   auditLogs           AuditLog[]            @relation("AuditActor")
   loginEvents         LoginEvent[]
+  cvMatchRuns         CvMatchRun[]
 }
 
 model Opportunity {
@@ -1170,6 +1171,33 @@ model ErrorLog {
   createdAt DateTime @default(now())
 
   @@index([createdAt(sort: Desc)])
+}
+
+// One row per CV-vs-JD analysis the user runs in the CV Match tool.
+// Persisted snapshot of inputs + scoring outputs so a returning user
+// can compare runs over time without re-uploading.
+model CvMatchRun {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cvSource        String
+  cvId            String?
+  cvText          String?
+  jdSource        String
+  opportunityId   String?
+  jdText          String
+  jobTitle        String?
+  cvSkills        String[] @default([])
+  jdRequired      String[] @default([])
+  jdPreferred     String[] @default([])
+  jdYearsRequired Int?
+  score           Int      @default(0)
+  breakdown       Json
+  refinements     Json
+  missingSkills   String[] @default([])
+  createdAt       DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
 }
 
 // Activity feed for the Career Tools hub. Each row is one interaction
