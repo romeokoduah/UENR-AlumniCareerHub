@@ -127,6 +127,10 @@ model User {
   resourcesSubmitted  LearningResource[]  @relation("SubmittedResources")
   questionVotes       InterviewQuestionVote[]
   aptitudeAttempts    AptitudeAttempt[]
+  gigsPosted          FreelanceGig[]    @relation("PostedGigs")
+  gigBids             FreelanceBid[]    @relation("Bids")
+  reviewsGiven        FreelanceReview[] @relation("GivenReviews")
+  reviewsReceived     FreelanceReview[] @relation("ReceivedReviews")
 }
 
 model Opportunity {
@@ -768,6 +772,152 @@ model CityCostOfLiving {
   totalMonthly     Int
   notes            String?
   updatedAt        DateTime @updatedAt
+}
+
+// ===== Phase 4: Ventures =====
+
+// Downloadable pitch-deck templates for the Startup Resources hub.
+// File lives in Vercel Blob; we count downloads for popularity sorting.
+model StartupDeckTemplate {
+  id            String   @id @default(cuid())
+  slug          String   @unique
+  name          String
+  description   String
+  stage         String
+  fileUrl       String
+  thumbnailUrl  String?
+  downloadCount Int      @default(0)
+  createdAt     DateTime @default(now())
+}
+
+// Curated incubator / accelerator / hub directory. Ghana-focused.
+model Incubator {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  description String
+  url         String
+  location    String
+  focus       String[] @default([])
+  programType String
+  applyUrl    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([programType, isActive])
+}
+
+// Curated grants directory with next deadlines.
+model Grant {
+  id             String    @id @default(cuid())
+  slug           String    @unique
+  name           String
+  provider       String
+  description    String
+  applicationUrl String
+  nextDeadline   DateTime?
+  amount         String?
+  fitCriteria    String[]  @default([])
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+
+  @@index([nextDeadline])
+}
+
+// ----- Freelance project board -----
+
+enum GigStatus {
+  OPEN
+  AWARDED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum GigCategory {
+  DESIGN
+  DEV
+  WRITING
+  RESEARCH
+  TRANSLATION
+  CONSULTING
+  OTHER
+}
+
+model FreelanceGig {
+  id            String      @id @default(cuid())
+  posterId      String
+  poster        User        @relation("PostedGigs", fields: [posterId], references: [id], onDelete: Cascade)
+  title         String
+  description   String
+  category      GigCategory
+  budgetMin     Int
+  budgetMax     Int
+  currency      String      @default("GHS")
+  deadlineAt    DateTime?
+  skills        String[]    @default([])
+  status        GigStatus   @default(OPEN)
+  awardedBidId  String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  bids FreelanceBid[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([category, status])
+}
+
+model FreelanceBid {
+  id            String       @id @default(cuid())
+  gigId         String
+  gig           FreelanceGig @relation(fields: [gigId], references: [id], onDelete: Cascade)
+  bidderId      String
+  bidder        User         @relation("Bids", fields: [bidderId], references: [id], onDelete: Cascade)
+  coverNote     String
+  priceAmount   Int
+  currency      String       @default("GHS")
+  deliveryDays  Int
+  isShortlisted Boolean      @default(false)
+  isAwarded     Boolean      @default(false)
+  createdAt     DateTime     @default(now())
+
+  @@unique([gigId, bidderId])
+  @@index([gigId])
+}
+
+model FreelanceReview {
+  id         String   @id @default(cuid())
+  gigId      String
+  reviewerId String
+  reviewer   User     @relation("GivenReviews", fields: [reviewerId], references: [id], onDelete: Cascade)
+  revieweeId String
+  reviewee   User     @relation("ReceivedReviews", fields: [revieweeId], references: [id], onDelete: Cascade)
+  role       String
+  rating     Int
+  comment    String?
+  createdAt  DateTime @default(now())
+
+  @@unique([gigId, reviewerId, revieweeId])
+}
+
+// ----- Ghana Business Registration walkthrough -----
+
+model BizRegStep {
+  id                String   @id @default(cuid())
+  slug              String   @unique
+  authority         String
+  title             String
+  description       String
+  estimatedTimeDays Int?
+  estimatedCostGhs  Int?
+  pitfalls          String?
+  officialUrl       String?
+  formDownloads     Json?
+  position          Int      @default(0)
+  category          String
+  createdAt         DateTime @default(now())
+
+  @@index([category, position])
 }
 
 // Activity feed for the Career Tools hub. Each row is one interaction
