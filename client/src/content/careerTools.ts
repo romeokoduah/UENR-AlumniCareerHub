@@ -123,7 +123,7 @@ export const CAREER_TOOLS: CareerTool[] = [
     category: 'interview',
     icon: MessageSquare,
     phase: 3,
-    status: 'coming-soon'
+    status: 'live'
   },
   {
     slug: 'interview/mock',
@@ -132,7 +132,7 @@ export const CAREER_TOOLS: CareerTool[] = [
     category: 'interview',
     icon: Calendar,
     phase: 3,
-    status: 'coming-soon'
+    status: 'live'
   },
   {
     slug: 'aptitude',
@@ -141,7 +141,7 @@ export const CAREER_TOOLS: CareerTool[] = [
     category: 'interview',
     icon: Brain,
     phase: 3,
-    status: 'coming-soon'
+    status: 'live'
   },
   {
     slug: 'salary',
@@ -150,7 +150,7 @@ export const CAREER_TOOLS: CareerTool[] = [
     category: 'interview',
     icon: DollarSign,
     phase: 3,
-    status: 'coming-soon'
+    status: 'live'
   },
 
   // ===== Ventures =====

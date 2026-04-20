@@ -38,6 +38,10 @@ import learningRoutes from './routes/learning.js';
 import certificationsRoutes from './routes/certifications.js';
 import pathsRoutes from './routes/paths.js';
 import pathAlumniRoutes from './routes/pathAlumni.js';
+import interviewQuestionRoutes from './routes/interviewQuestions.js';
+import mockInterviewRoutes from './routes/mockInterviews.js';
+import aptitudeRoutes from './routes/aptitude.js';
+import salaryRoutes from './routes/salary.js';
 import adminRoutes from './routes/admin.js';
 import contentRoutes from './routes/content.js';
 import { UPLOAD_DIR } from './lib/upload.js';
@@ -80,6 +84,10 @@ export function createApp() {
   app.use('/api/certifications', certificationsRoutes);
   app.use('/api/paths', pathsRoutes);
   app.use('/api/path-alumni', pathAlumniRoutes);
+  app.use('/api/interview-questions', interviewQuestionRoutes);
+  app.use('/api/mock-interviews', mockInterviewRoutes);
+  app.use('/api/aptitude', aptitudeRoutes);
+  app.use('/api/salary', salaryRoutes);
   app.use('/api/content', contentRoutes);
   app.use('/api/admin', adminRoutes);
 
