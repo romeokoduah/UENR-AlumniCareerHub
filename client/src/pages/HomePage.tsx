@@ -167,7 +167,11 @@ export default function HomePage() {
               className="group relative overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--card)]"
             >
               <div className="relative aspect-[4/5] overflow-hidden">
-                <SmoothImage src={a.photo} alt={a.name} className="absolute inset-0" />
+                <SmoothImage
+                  src={a.photo}
+                  alt={a.name}
+                  className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+                />
                 <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
                 <div className="absolute inset-x-0 bottom-0 p-5 text-white">
                   <div className="font-heading text-xl font-bold leading-tight">{a.name}</div>
@@ -224,7 +228,7 @@ export default function HomePage() {
             className="relative"
           >
             <div className="relative overflow-hidden rounded-3xl">
-              <SmoothImage src={STORY_PHOTO} alt="UENR students collaborating" className="h-[520px] w-full" />
+              <SmoothImage src={STORY_PHOTO} alt="UENR students collaborating" className="h-[520px] w-full object-cover" />
               <div className="absolute inset-0 bg-gradient-to-tr from-[#065F46]/40 to-transparent" />
             </div>
             <div className="absolute -bottom-6 -right-6 hidden rounded-2xl border-4 border-[var(--bg)] bg-[#F59E0B] p-6 md:block">
@@ -375,6 +379,10 @@ function PhotoTile({ src, className, accent }: { src: string; className: string;
   );
 }
 
+// SmoothImage renders no wrapper of its own — it's a Fragment with the
+// skeleton/error overlays and the <img>. Callers must supply a positioned
+// parent (the overlays use position:absolute to fill it) and pass the
+// img's own classes via `className`.
 function SmoothImage({
   src, alt = '', className = '', eager = false
 }: { src: string; alt?: string; className?: string; eager?: boolean }) {
@@ -386,12 +394,10 @@ function SmoothImage({
     setErrored(false);
   }, [src]);
 
-  if (!src) {
-    return <div className={`relative bg-[var(--bg)] ${className}`} />;
-  }
+  if (!src) return null;
 
   return (
-    <div className={`relative ${className}`}>
+    <>
       {!loaded && !errored && (
         <div aria-hidden className="absolute inset-0 animate-pulse bg-[var(--card)]" />
       )}
@@ -407,9 +413,10 @@ function SmoothImage({
         loading={eager ? 'eager' : 'lazy'}
         onLoad={() => setLoaded(true)}
         onError={() => setErrored(true)}
-        className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+        className={className}
+        style={{ opacity: loaded ? 1 : 0, transition: 'opacity 250ms ease-out' }}
       />
-    </div>
+    </>
   );
 }
 
