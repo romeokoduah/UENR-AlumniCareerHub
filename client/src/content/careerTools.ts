@@ -219,7 +219,7 @@ export const CAREER_TOOLS: CareerTool[] = [
     category: 'employers',
     icon: Users,
     phase: 6,
-    status: 'coming-soon',
+    status: 'live',
     employerOnly: true
   }
 ];

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
+import { scoreApplication } from '../lib/atsScoring.js';
 
 const router = Router();
 
@@ -88,12 +89,62 @@ router.post('/', requireAuth, validate(createSchema), async (req, res, next) => 
 
 router.post('/:id/apply', requireAuth, async (req, res, next) => {
   try {
+    // Load the opportunity + applicant so we can compute the recruiter score
+    // at apply time. Score is stored alongside the application; recruiter can
+    // recompute later via /api/ats/applications/:id/recompute.
+    const [opportunity, applicant] = await Promise.all([
+      prisma.opportunity.findUnique({
+        where: { id: req.params.id },
+        select: {
+          id: true,
+          requiredSkills: true,
+          preferredSkills: true,
+          location: true,
+          locationType: true,
+          customQuestions: true
+        }
+      }),
+      prisma.user.findUnique({
+        where: { id: req.auth!.sub },
+        select: {
+          skills: true,
+          programme: true,
+          graduationYear: true,
+          currentRole: true,
+          currentCompany: true,
+          location: true,
+          bio: true
+        }
+      })
+    ]);
+
+    if (!opportunity) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Opportunity not found' } });
+    }
+
+    // Optional structured answers to recruiter custom questions.
+    let customAnswers: Record<string, string> | null = null;
+    if (opportunity.customQuestions && req.body.customAnswers && typeof req.body.customAnswers === 'object') {
+      customAnswers = req.body.customAnswers as Record<string, string>;
+    }
+
+    let recruiterScore: number | null = null;
+    let recruiterScoreBreakdown: any = null;
+    if (applicant) {
+      const result = scoreApplication({}, opportunity, applicant);
+      recruiterScore = result.score;
+      recruiterScoreBreakdown = result.breakdown;
+    }
+
     const app = await prisma.application.create({
       data: {
         userId: req.auth!.sub,
         opportunityId: req.params.id,
         cvUrl: req.body.cvUrl,
-        coverLetter: req.body.coverLetter
+        coverLetter: req.body.coverLetter,
+        customAnswers: customAnswers ?? undefined,
+        recruiterScore: recruiterScore ?? undefined,
+        recruiterScoreBreakdown: recruiterScoreBreakdown ?? undefined
       }
     });
     res.status(201).json({ success: true, data: app });

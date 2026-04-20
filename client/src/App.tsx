@@ -43,6 +43,9 @@ const BusinessRegistrationPage = lazy(() => import('./pages/career-tools/Busines
 const CounselingPage = lazy(() => import('./pages/career-tools/CounselingPage'));
 const TranscriptsPage = lazy(() => import('./pages/career-tools/TranscriptsPage'));
 const AchievementsWallPage = lazy(() => import('./pages/career-tools/AchievementsWallPage'));
+const AtsPage = lazy(() => import('./pages/career-tools/AtsPage'));
+const AtsJobBoardPage = lazy(() => import('./pages/career-tools/AtsJobBoardPage'));
+const MyApplicationsPage = lazy(() => import('./pages/career-tools/MyApplicationsPage'));
 const AdminLearningModerationPage = lazy(() => import('./pages/admin/AdminLearningModerationPage'));
 const AdminAchievementsModerationPage = lazy(() => import('./pages/admin/AdminAchievementsModerationPage'));
 const PublicTranscriptVerifyPage = lazy(() => import('./pages/PublicTranscriptVerifyPage'));
@@ -105,6 +108,9 @@ export default function App() {
           <Route path="career-tools/counseling" element={<RequireAuth><CounselingPage /></RequireAuth>} />
           <Route path="career-tools/transcripts" element={<RequireAuth><TranscriptsPage /></RequireAuth>} />
           <Route path="career-tools/achievements" element={<RequireAuth><AchievementsWallPage /></RequireAuth>} />
+          <Route path="career-tools/ats/my-applications" element={<RequireAuth><MyApplicationsPage /></RequireAuth>} />
+          <Route path="career-tools/ats/jobs/:jobId" element={<RequireAuth roles={['EMPLOYER', 'ADMIN']}><AtsJobBoardPage /></RequireAuth>} />
+          <Route path="career-tools/ats" element={<RequireAuth roles={['EMPLOYER', 'ADMIN']}><AtsPage /></RequireAuth>} />
           <Route path="career-tools/*" element={<RequireAuth><CareerToolPlaceholderPage /></RequireAuth>} />
 
           <Route path="profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
