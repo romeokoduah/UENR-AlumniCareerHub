@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/auth';
 import { AppLayout } from './components/layout/AppLayout';
+import { AdminLayout } from './components/admin/AdminLayout';
 import { CareerMateWidget } from './components/chatbot/CareerMateWidget';
 import { PageLoader } from './components/ui/PageLoader';
 
@@ -48,6 +49,8 @@ const AtsJobBoardPage = lazy(() => import('./pages/career-tools/AtsJobBoardPage'
 const MyApplicationsPage = lazy(() => import('./pages/career-tools/MyApplicationsPage'));
 const AdminLearningModerationPage = lazy(() => import('./pages/admin/AdminLearningModerationPage'));
 const AdminAchievementsModerationPage = lazy(() => import('./pages/admin/AdminAchievementsModerationPage'));
+const AdminUsersPage = lazy(() => import('./pages/admin/AdminUsersPage'));
+const AdminPlaceholderPage = lazy(() => import('./pages/admin/AdminPlaceholderPage'));
 const PublicTranscriptVerifyPage = lazy(() => import('./pages/PublicTranscriptVerifyPage'));
 const PublicPortfolioPage = lazy(() => import('./pages/PublicPortfolioPage'));
 const PublicShareViewerPage = lazy(() => import('./pages/PublicShareViewerPage'));
@@ -114,11 +117,23 @@ export default function App() {
           <Route path="career-tools/*" element={<RequireAuth><CareerToolPlaceholderPage /></RequireAuth>} />
 
           <Route path="profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
-          <Route path="admin" element={<RequireAuth roles={['ADMIN']}><AdminPage /></RequireAuth>} />
-          <Route path="admin/opportunities" element={<RequireAuth roles={['ADMIN']}><AdminOpportunitiesPage /></RequireAuth>} />
-          <Route path="admin/landing" element={<RequireAuth roles={['ADMIN']}><AdminLandingEditorPage /></RequireAuth>} />
-          <Route path="admin/learning" element={<RequireAuth roles={['ADMIN']}><AdminLearningModerationPage /></RequireAuth>} />
-          <Route path="admin/achievements" element={<RequireAuth roles={['ADMIN']}><AdminAchievementsModerationPage /></RequireAuth>} />
+
+          {/* Admin shell wraps every /admin/* route in the sidebar layout */}
+          <Route path="admin" element={<RequireAuth roles={['ADMIN']}><AdminLayout /></RequireAuth>}>
+            <Route index element={<AdminPage />} />
+            <Route path="users" element={<AdminUsersPage />} />
+            <Route path="opportunities" element={<AdminOpportunitiesPage />} />
+            <Route path="landing" element={<AdminLandingEditorPage />} />
+            <Route path="learning" element={<AdminLearningModerationPage />} />
+            <Route path="achievements" element={<AdminAchievementsModerationPage />} />
+            <Route path="moderation" element={<AdminPlaceholderPage />} />
+            <Route path="data" element={<AdminPlaceholderPage />} />
+            <Route path="services" element={<AdminPlaceholderPage />} />
+            <Route path="ats" element={<AdminPlaceholderPage />} />
+            <Route path="site" element={<AdminPlaceholderPage />} />
+            <Route path="insights" element={<AdminPlaceholderPage />} />
+            <Route path="system" element={<AdminPlaceholderPage />} />
+          </Route>
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

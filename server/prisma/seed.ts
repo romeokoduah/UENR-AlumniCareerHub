@@ -26,6 +26,7 @@ async function main() {
       role: 'ADMIN',
       isApproved: true,
       isVerified: true,
+      isSuperuser: true,
       profileComplete: true
     }
   });

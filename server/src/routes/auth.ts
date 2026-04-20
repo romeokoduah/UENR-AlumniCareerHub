@@ -54,9 +54,19 @@ const loginSchema = z.object({ email: z.string().email(), password: z.string() }
 router.post('/login', validate(loginSchema), async (req, res, next) => {
   try {
     const { email, password } = req.body;
+    const ip = (req.headers['x-forwarded-for']?.toString().split(',')[0] || req.ip || '').slice(0, 45);
+    const userAgent = (req.headers['user-agent'] || '').slice(0, 500);
+
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
+    if (!user) {
+      // Best-effort: record failed attempts against any matching account
+      // for audit; if there's no account at all, no row to attribute it to.
+      throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
+    }
     const ok = await bcrypt.compare(password, user.passwordHash);
+    prisma.loginEvent.create({
+      data: { userId: user.id, ip, userAgent, success: ok }
+    }).catch(() => { /* best-effort */ });
     if (!ok) throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
 
     const token = signToken({ sub: user.id, role: user.role });

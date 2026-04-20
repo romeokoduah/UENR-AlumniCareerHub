@@ -1,14 +1,46 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requireAuth, requireRole, requireSuperuser } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { getLanding, saveLanding, resetLanding } from '../services/siteContent.js';
 import { uploadImage, storeUpload } from '../lib/upload.js';
+import { logAudit } from '../lib/audit.js';
 
 const router = Router();
 
 router.use(requireAuth, requireRole('ADMIN'));
+
+// One-time bootstrap: if NO superuser exists in the DB, the first ADMIN
+// to call this gets promoted. Idempotent — once a superuser exists, this
+// endpoint is a no-op for everyone (returns whether the caller themselves
+// is a superuser). Safe to call from the admin page's mount effect.
+router.post('/bootstrap-superuser', async (req, res, next) => {
+  try {
+    const existing = await prisma.user.count({ where: { isSuperuser: true } });
+    if (existing > 0) {
+      const me = await prisma.user.findUnique({
+        where: { id: req.auth!.sub },
+        select: { isSuperuser: true }
+      });
+      return res.json({
+        success: true,
+        data: { promoted: false, isSuperuser: !!me?.isSuperuser, existingCount: existing }
+      });
+    }
+    const updated = await prisma.user.update({
+      where: { id: req.auth!.sub },
+      data: { isSuperuser: true }
+    });
+    await logAudit({
+      actorId: updated.id,
+      action: 'user.bootstrap_superuser',
+      targetType: 'User',
+      targetId: updated.id
+    });
+    res.json({ success: true, data: { promoted: true, isSuperuser: true } });
+  } catch (e) { next(e); }
+});
 
 router.get('/stats', async (_req, res, next) => {
   try {
@@ -27,8 +59,13 @@ router.get('/users', async (_req, res, next) => {
   try {
     const users = await prisma.user.findMany({
       orderBy: { createdAt: 'desc' },
-      take: 200,
-      select: { id: true, email: true, firstName: true, lastName: true, role: true, isApproved: true, isVerified: true, createdAt: true }
+      take: 500,
+      select: {
+        id: true, email: true, firstName: true, lastName: true,
+        role: true, isApproved: true, isVerified: true, isSuperuser: true,
+        programme: true, graduationYear: true,
+        createdAt: true
+      }
     });
     res.json({ success: true, data: users });
   } catch (e) { next(e); }
@@ -37,7 +74,55 @@ router.get('/users', async (_req, res, next) => {
 router.patch('/users/:id/approve', async (req, res, next) => {
   try {
     const user = await prisma.user.update({ where: { id: req.params.id }, data: { isApproved: true } });
+    await logAudit({
+      actorId: req.auth!.sub,
+      action: 'user.approved',
+      targetType: 'User',
+      targetId: user.id
+    });
     res.json({ success: true, data: user });
+  } catch (e) { next(e); }
+});
+
+// Promote / demote superuser. Only an existing superuser can do this.
+// A superuser cannot demote themselves while they are the last remaining
+// superuser — guards against accidental lockout.
+const superuserSchema = z.object({ isSuperuser: z.boolean() });
+
+router.patch('/users/:id/superuser', requireSuperuser, async (req, res, next) => {
+  try {
+    const { isSuperuser } = superuserSchema.parse(req.body);
+    const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!target) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'User not found' } });
+    }
+    if (target.role !== 'ADMIN' && isSuperuser) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'NOT_ADMIN', message: 'Promote the user to ADMIN first.' }
+      });
+    }
+    if (!isSuperuser && target.id === req.auth!.sub) {
+      const remaining = await prisma.user.count({ where: { isSuperuser: true, id: { not: target.id } } });
+      if (remaining === 0) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'LAST_SUPERUSER', message: 'Cannot demote the last remaining superuser.' }
+        });
+      }
+    }
+    const updated = await prisma.user.update({
+      where: { id: target.id },
+      data: { isSuperuser }
+    });
+    await logAudit({
+      actorId: req.auth!.sub,
+      action: isSuperuser ? 'user.promoted_to_superuser' : 'user.demoted_from_superuser',
+      targetType: 'User',
+      targetId: updated.id,
+      metadata: { previousValue: target.isSuperuser }
+    });
+    res.json({ success: true, data: updated });
   } catch (e) { next(e); }
 });
 

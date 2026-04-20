@@ -97,6 +97,7 @@ model User {
   currentCompany   String?
   isVerified       Boolean  @default(false)
   isApproved       Boolean  @default(false)
+  isSuperuser      Boolean  @default(false)
   profileComplete  Boolean  @default(false)
   visibility       String   @default("members")
   createdAt        DateTime @default(now())
@@ -139,6 +140,8 @@ model User {
   candidateNotes      CandidateNote[]       @relation("ApplicationNotes")
   pooledCandidates    TalentPoolEntry[]     @relation("PooledCandidates")
   talentPoolOwners    TalentPoolEntry[]     @relation("TalentPoolOwners")
+  auditLogs           AuditLog[]            @relation("AuditActor")
+  loginEvents         LoginEvent[]
 }
 
 model Opportunity {
@@ -1111,6 +1114,57 @@ model AchievementCongrats {
   createdAt     DateTime    @default(now())
 
   @@unique([achievementId, userId])
+}
+
+// ===== Phase 7 / Superuser admin layer =====
+
+// Every write a superuser makes through /admin/* writes one of these
+// BEFORE the write lands, capturing a structured diff for incident
+// response and compliance.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  actor      User     @relation("AuditActor", fields: [actorId], references: [id], onDelete: Cascade)
+  action     String
+  targetType String?
+  targetId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@index([actorId, createdAt(sort: Desc)])
+  @@index([targetType, targetId])
+}
+
+// Login history per user — populated from /auth/login (success + fail).
+// Drives the "force logout everywhere" and "view login history" admin
+// features.
+model LoginEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ip        String?
+  userAgent String?
+  success   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+// Capped, best-effort error log populated by the errorHandler. Drives
+// the "last 50 server errors" pane on the system-health admin view.
+model ErrorLog {
+  id        String   @id @default(cuid())
+  message   String
+  stack     String?
+  path      String?
+  method    String?
+  status    Int?
+  userId    String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt(sort: Desc)])
 }
 
 // Activity feed for the Career Tools hub. Each row is one interaction

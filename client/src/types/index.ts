@@ -18,6 +18,7 @@ export type User = {
   currentCompany?: string;
   profileComplete?: boolean;
   isApproved?: boolean;
+  isSuperuser?: boolean;
 };
 
 export type Opportunity = {
