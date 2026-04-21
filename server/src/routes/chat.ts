@@ -1,15 +1,15 @@
 // Chat-style AI endpoints — backs CareerMate (the floating chatbot),
 // the legacy CV reviewer, and the legacy mock interviewer. All three
-// run through Google Gemini via lib/gemini.geminiChat — the same key
-// + model the CV Match v3 / ATS v2 surfaces use, so the project only
-// has one AI vendor to maintain.
+// run through lib/aiProvider which tries Groq first (free 14,400/day,
+// fast, OpenAI-compatible) and falls back to Gemini if Groq is
+// unavailable.
 
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { optionalAuth } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { geminiChat, isAiEnabled, getLastGeminiError } from '../lib/gemini.js';
+import { aiChat, isAnyProviderEnabled, getLastAiError } from '../lib/aiProvider.js';
 
 const router = Router();
 
@@ -28,7 +28,7 @@ You help with:
 Keep answers concise, bulleted when useful, and always end with a concrete next step the user can take today.`;
 
 const KEY_MISSING_REPLY =
-  "Hi! I'm CareerMate. The site is missing GOOGLE_GEMINI_API_KEY — once your admin adds it, I'll be able to give you real career guidance. In the meantime, try the Career Tools hub for CV building, mentorship, and the job board.";
+  "Hi! I'm CareerMate. The site has no AI provider configured yet — once your admin sets GROQ_API_KEY (or GOOGLE_GEMINI_API_KEY), I'll be able to give you real career guidance. In the meantime, try the Career Tools hub for CV building, mentorship, and the job board.";
 
 const CV_REVIEW_SYSTEM =
   'You are a professional CV reviewer. Give actionable feedback on structure, content, ATS-friendliness, grammar, and impact statements. Be specific and encouraging. Use bulleted lists when listing issues.';
@@ -48,7 +48,7 @@ router.post('/careermate', optionalAuth, validate(messageSchema), async (req, re
   try {
     const { sessionId, message, history } = req.body as z.infer<typeof messageSchema>;
 
-    if (!(await isAiEnabled())) {
+    if (!(await isAnyProviderEnabled())) {
       return res.json({ success: true, data: { reply: KEY_MISSING_REPLY } });
     }
 
@@ -56,20 +56,19 @@ router.post('/careermate', optionalAuth, validate(messageSchema), async (req, re
       data: { sessionId, userId: req.auth?.sub ?? null, role: 'user', content: message }
     }).catch(() => { /* best-effort */ });
 
-    // Sanitise history: Gemini rejects conversations that don't start
-    // with a user turn, and chokes on empty content. Drop any leading
+    // Sanitise history: providers reject conversations starting with an
+    // assistant turn and choke on empty content. Drop any leading
     // assistant turns and any empty messages before sending.
     let cleanHistory = history.filter((h) => h.content && h.content.trim().length > 0);
     while (cleanHistory.length > 0 && cleanHistory[0].role === 'assistant') {
       cleanHistory.shift();
     }
-    // Cap history at the last 10 turns to avoid runaway prompt growth.
     if (cleanHistory.length > 10) {
       cleanHistory = cleanHistory.slice(-10);
     }
 
-    const result = await geminiChat(CAREERMATE_SYSTEM, cleanHistory, message, {
-      maxOutputTokens: 1024,
+    const result = await aiChat(CAREERMATE_SYSTEM, cleanHistory, message, {
+      maxTokens: 1024,
       temperature: 0.7
     });
 
@@ -77,12 +76,9 @@ router.post('/careermate', optionalAuth, validate(messageSchema), async (req, re
     if (result?.text) {
       reply = result.text;
     } else {
-      // Translate the underlying Gemini error into a human-readable
-      // message. The free-tier 429 (quota exhausted) is by far the most
-      // common failure mode in production, so call it out explicitly.
-      const err = getLastGeminiError() ?? '';
-      if (err.includes('429') || /quota/i.test(err)) {
-        reply = "I've hit my daily AI quota — Google's free tier resets at midnight Pacific Time. Try me again then, or your admin can lift the cap by enabling billing on the Gemini API. Meanwhile, the Career Tools hub still works normally.";
+      const err = getLastAiError() ?? '';
+      if (/429/.test(err) || /quota/i.test(err)) {
+        reply = "Both my AI providers hit their rate limits at the same time. Try again in a minute — usually clears quickly. The Career Tools hub still works normally.";
       } else if (/blocked/i.test(err)) {
         reply = "I couldn't answer that one — the model's safety filter blocked the response. Try rephrasing the question?";
       } else if (/timeout/i.test(err)) {
@@ -108,14 +104,14 @@ router.post('/cv-review', optionalAuth, async (req, res, next) => {
     if (!cvText) {
       return res.status(400).json({ success: false, error: { code: 'NO_CV', message: 'cvText is required' } });
     }
-    if (!(await isAiEnabled())) {
-      return res.json({ success: true, data: { feedback: 'AI review unavailable — set GOOGLE_GEMINI_API_KEY.' } });
+    if (!(await isAnyProviderEnabled())) {
+      return res.json({ success: true, data: { feedback: 'AI review unavailable — set GROQ_API_KEY or GOOGLE_GEMINI_API_KEY.' } });
     }
-    const result = await geminiChat(
+    const result = await aiChat(
       CV_REVIEW_SYSTEM,
       [],
       `Review this CV:\n\n${cvText.slice(0, 12_000)}`,
-      { maxOutputTokens: 1500, temperature: 0.5 }
+      { maxTokens: 1500, temperature: 0.5 }
     );
     const feedback = result?.text ?? "Couldn't reach the AI for review. Try again shortly.";
     res.json({ success: true, data: { feedback } });
@@ -134,16 +130,16 @@ router.post('/mock-interview', optionalAuth, async (req, res, next) => {
       userAnswer?: string;
     };
 
-    if (!(await isAiEnabled())) {
-      return res.json({ success: true, data: { reply: 'AI interviewer unavailable — set GOOGLE_GEMINI_API_KEY.' } });
+    if (!(await isAnyProviderEnabled())) {
+      return res.json({ success: true, data: { reply: 'AI interviewer unavailable — set GROQ_API_KEY or GOOGLE_GEMINI_API_KEY.' } });
     }
 
     const system = `You are an interviewer for a ${difficulty || 'mid-level'} ${role || 'professional'} role in ${industry || 'general industry'}. Ask ONE realistic interview question at a time (mix behavioral + technical). After the candidate answers, give brief feedback (strengths, improvements, STAR-rewrite if applicable) and then ask the next question. Keep it encouraging.`;
 
     const userMessage = userAnswer ?? 'Start the interview.';
 
-    const result = await geminiChat(system, history, userMessage, {
-      maxOutputTokens: 800,
+    const result = await aiChat(system, history, userMessage, {
+      maxTokens: 800,
       temperature: 0.6
     });
 
