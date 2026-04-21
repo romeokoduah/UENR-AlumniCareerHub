@@ -12,7 +12,10 @@
 //   - 6s timeout per attempt, one retry on 5xx / network blips, then null.
 //   - 24h in-memory cache keyed on (prompt, model, temperature).
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+// We talk to Gemini's REST API directly via fetch instead of going
+// through @google/generative-ai. The legacy SDK (0.24.x) doesn't
+// cleanly handle gemini-2.5-flash's "thinking" tokens, returning empty
+// text() in some cases — direct fetch sidesteps the issue entirely.
 import { prisma } from './prisma.js';
 import { cacheGet, cacheSet, cacheKeyFor } from './aiCache.js';
 
@@ -96,31 +99,63 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 
 type GeminiAttempt<T> = { data: T; tokensUsed: number };
 
+const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+
 async function attemptOnce<T>(
-  client: GoogleGenerativeAI,
+  apiKey: string,
   prompt: string,
   schemaShape: object,
   model: string,
   temperature: number,
   maxOutputTokens: number
 ): Promise<GeminiAttempt<T>> {
-  const generative = client.getGenerativeModel({
-    model,
+  const url = `${GEMINI_BASE}/${encodeURIComponent(model)}:generateContent?key=${apiKey}`;
+  const body = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: {
       temperature,
       maxOutputTokens,
       responseMimeType: 'application/json',
-      // The Gemini SDK types `responseSchema` as a tagged ResponseSchema
-      // object, but in practice it accepts a plain JSON-Schema-shaped object
-      // (which is what every prompt in this repo passes). The cast keeps
-      // strict TS happy without forcing every caller to import SchemaType.
-      responseSchema: schemaShape as never
+      responseSchema: schemaShape
     }
+  };
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
   });
 
-  const result = await generative.generateContent(prompt);
-  const text = result.response.text();
-  const tokensUsed = result.response.usageMetadata?.totalTokenCount ?? 0;
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`gemini ${res.status}: ${errText.slice(0, 300)}`);
+  }
+
+  const json = await res.json() as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>;
+    usageMetadata?: { totalTokenCount?: number };
+    promptFeedback?: { blockReason?: string };
+  };
+
+  if (json.promptFeedback?.blockReason) {
+    throw new Error(`gemini blocked: ${json.promptFeedback.blockReason}`);
+  }
+
+  // Concatenate every text part across every candidate (2.5-flash can
+  // emit multiple parts when thinking is on; we only care about the
+  // visible text, which is the JSON answer we asked for).
+  const text = (json.candidates ?? [])
+    .flatMap((c) => c.content?.parts ?? [])
+    .map((p) => p.text ?? '')
+    .join('')
+    .trim();
+  const tokensUsed = json.usageMetadata?.totalTokenCount ?? 0;
+
+  if (!text) {
+    const finish = json.candidates?.[0]?.finishReason ?? 'unknown';
+    throw new Error(`gemini returned empty text (finishReason=${finish})`);
+  }
+
   let parsed: T;
   try {
     parsed = JSON.parse(text) as T;
@@ -151,12 +186,10 @@ export async function geminiJson<T>(
     return { data: cached, tokensUsed: 0, cached: true };
   }
 
-  const client = new GoogleGenerativeAI(apiKey);
-
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const out = await withTimeout(
-        attemptOnce<T>(client, prompt, schemaShape, model, temperature, maxOutputTokens),
+        attemptOnce<T>(apiKey, prompt, schemaShape, model, temperature, maxOutputTokens),
         TIMEOUT_MS
       );
       cacheSet(cacheKey, out.data);
