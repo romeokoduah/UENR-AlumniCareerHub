@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { optionalAuth } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { geminiChat, isAiEnabled } from '../lib/gemini.js';
+import { geminiChat, isAiEnabled, getLastGeminiError } from '../lib/gemini.js';
 
 const router = Router();
 
@@ -56,7 +56,19 @@ router.post('/careermate', optionalAuth, validate(messageSchema), async (req, re
       data: { sessionId, userId: req.auth?.sub ?? null, role: 'user', content: message }
     }).catch(() => { /* best-effort */ });
 
-    const result = await geminiChat(CAREERMATE_SYSTEM, history, message, {
+    // Sanitise history: Gemini rejects conversations that don't start
+    // with a user turn, and chokes on empty content. Drop any leading
+    // assistant turns and any empty messages before sending.
+    let cleanHistory = history.filter((h) => h.content && h.content.trim().length > 0);
+    while (cleanHistory.length > 0 && cleanHistory[0].role === 'assistant') {
+      cleanHistory.shift();
+    }
+    // Cap history at the last 10 turns to avoid runaway prompt growth.
+    if (cleanHistory.length > 10) {
+      cleanHistory = cleanHistory.slice(-10);
+    }
+
+    const result = await geminiChat(CAREERMATE_SYSTEM, cleanHistory, message, {
       maxOutputTokens: 1024,
       temperature: 0.7
     });
@@ -68,7 +80,13 @@ router.post('/careermate', optionalAuth, validate(messageSchema), async (req, re
       data: { sessionId, userId: req.auth?.sub ?? null, role: 'assistant', content: reply }
     }).catch(() => { /* best-effort */ });
 
-    res.json({ success: true, data: { reply } });
+    // Debug field surfaces the underlying Gemini failure when the reply
+    // is the fallback string. Removed once we're confident in the pipeline.
+    const responseData: { reply: string; debug?: string | null } = { reply };
+    if (!result) {
+      responseData.debug = getLastGeminiError();
+    }
+    res.json({ success: true, data: responseData });
   } catch (e) { next(e); }
 });
 

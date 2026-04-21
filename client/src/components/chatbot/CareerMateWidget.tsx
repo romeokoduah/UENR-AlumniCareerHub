@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { MessageCircle, X, Send, Sparkles } from 'lucide-react';
+import { MessageCircle, X, Send, Sparkles, RotateCcw } from 'lucide-react';
 import { api } from '../../services/api';
 
 type Msg = { role: 'user' | 'assistant'; content: string };
@@ -37,14 +37,30 @@ export function CareerMateWidget() {
       const { data } = await api.post('/chat/careermate', {
         sessionId: SESSION_ID,
         message: userMsg.content,
-        history: messages.filter((m) => m !== GREETING)
+        // Strip out our own previous failure replies + the greeting before
+        // sending. Including failure messages in history pollutes the
+        // model's context and can compound the issue.
+        history: messages
+          .filter((m) => m !== GREETING)
+          .filter((m) => !m.content.startsWith("I couldn't reach the AI"))
+          .filter((m) => !m.content.startsWith('Oops, I hit a snag'))
       });
-      setMessages((m) => [...m, { role: 'assistant', content: data.data.reply }]);
-    } catch {
-      setMessages((m) => [...m, { role: 'assistant', content: "Oops, I hit a snag. Mind trying again in a moment?" }]);
+      const reply = data?.data?.reply ?? '';
+      const debug = data?.data?.debug as string | undefined;
+      const finalReply = debug
+        ? `${reply}\n\n_(debug: ${debug})_`
+        : reply;
+      setMessages((m) => [...m, { role: 'assistant', content: finalReply }]);
+    } catch (err: any) {
+      const detail = err?.response?.data?.error?.message ?? err?.message ?? 'unknown error';
+      setMessages((m) => [...m, { role: 'assistant', content: `Oops, I hit a snag. (${detail}) — mind trying again in a moment?` }]);
     } finally {
       setLoading(false);
     }
+  };
+
+  const clearChat = () => {
+    setMessages([GREETING]);
   };
 
   return (
@@ -66,7 +82,15 @@ export function CareerMateWidget() {
                 <div className="font-heading font-bold">CareerMate</div>
                 <div className="text-xs opacity-80">Your AI career sidekick</div>
               </div>
-              <button onClick={() => setOpen(false)} className="p-1 rounded hover:bg-white/10">
+              <button
+                onClick={clearChat}
+                className="p-1 rounded hover:bg-white/10"
+                title="Clear chat"
+                aria-label="Clear chat"
+              >
+                <RotateCcw size={16} />
+              </button>
+              <button onClick={() => setOpen(false)} className="p-1 rounded hover:bg-white/10" aria-label="Close">
                 <X size={18} />
               </button>
             </header>
