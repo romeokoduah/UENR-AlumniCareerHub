@@ -34,6 +34,14 @@ export type GeminiResult<T> = {
   cached: boolean;
 } | null;
 
+// Last error message from the most recent geminiJson call. Exposed so
+// route handlers can include it in `{enabled:false, debug:lastGeminiError}`
+// while we debug the live integration.
+let lastGeminiError: string | null = null;
+export function getLastGeminiError(): string | null {
+  return lastGeminiError;
+}
+
 // Free-tier API keys created in late 2025 / early 2026 are gated to
 // gemini-2.5-flash (gemini-2.0-flash returns "limit: 0" 429s for new
 // projects). 2.5-flash is slower per-token because of its thinking
@@ -186,6 +194,7 @@ export async function geminiJson<T>(
     return { data: cached, tokensUsed: 0, cached: true };
   }
 
+  lastGeminiError = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const out = await withTimeout(
@@ -196,9 +205,11 @@ export async function geminiJson<T>(
       console.log(`[gemini] tokens=${out.tokensUsed} cached=false model=${model}`);
       return { data: out.data, tokensUsed: out.tokensUsed, cached: false };
     } catch (err) {
+      const msg = (err as Error).message;
+      lastGeminiError = `attempt ${attempt + 1}: ${msg}`;
       const last = attempt === 1;
       if (last || !isTransient(err)) {
-        console.warn(`[gemini] failed (${(err as Error).message}) — returning null`);
+        console.warn(`[gemini] failed (${msg}) — returning null`);
         return null;
       }
       // brief backoff before retry — ~250ms is enough to dodge most blips

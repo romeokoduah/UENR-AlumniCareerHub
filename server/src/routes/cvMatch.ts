@@ -26,7 +26,7 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { runCvMatch, type MatchInput, type Refinement } from '../lib/cvMatch.js';
-import { geminiJson, isAiEnabled } from '../lib/gemini.js';
+import { geminiJson, isAiEnabled, getLastGeminiError } from '../lib/gemini.js';
 import { logAudit } from '../lib/audit.js';
 
 const router = Router();
@@ -630,11 +630,11 @@ router.post('/ai/summary', requireAuth, aiLimiter, async (req, res, next) => {
     const result = await geminiJson<{ summary: string }>(
       prompt,
       summarySchemaShape,
-      { maxOutputTokens: 384, temperature: 0.4 }
+      { maxOutputTokens: 1024, temperature: 0.4 }
     );
 
     if (!result) {
-      return res.json({ success: true, data: { enabled: false } });
+      return res.json({ success: true, data: { enabled: false, debug: getLastGeminiError() } });
     }
 
     const summary = (result.data.summary ?? '').trim();
