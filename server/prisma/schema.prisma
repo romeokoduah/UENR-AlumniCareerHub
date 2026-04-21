@@ -1195,6 +1195,10 @@ model CvMatchRun {
   breakdown       Json
   refinements     Json
   missingSkills   String[] @default([])
+  // v2: AI augmentation fields. Nullable so existing v1 rows stay valid.
+  aiSummary       String?
+  aiBullets       Json?
+  aiCostTokens    Int?
   createdAt       DateTime @default(now())
 
   @@index([userId, createdAt(sort: Desc)])

@@ -1,12 +1,18 @@
 // CV Match — drop a CV + a JD, get a deterministic match score plus a
-// refinement checklist. No AI calls anywhere on this page; the backend
-// computes everything via /api/cv-match.
+// refinement checklist. v2 layers optional AI affordances (Google Gemini,
+// server-side) gated by GET /api/cv-match/ai/status.
 //
 // Layout:
 //   [Header + History link]
 //   [Panel 1: Your CV] | [Panel 2: Target job]   (lg: two-column)
 //                [Run match button — sticky]
 //   [Panel 3: Results] (full width, renders below after analyse)
+//     · Score + breakdown
+//     · AiTailoredSummary  (v2, gated)
+//     · Refinement checklist (with inline BulletRewriter on certain kinds, v2)
+//       └─ AiRefinementsPanel (v2, gated)
+//     · Missing skills / weak coverage / keyword density
+//     · Action row + privacy notice (v2, gated)
 //   [History drawer — slide-in, opens from header]
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -17,7 +23,8 @@ import toast from 'react-hot-toast';
 import {
   ArrowLeft, Target, Save, RotateCcw, FileText, Briefcase,
   Sparkles, History, X, Trash2, ChevronRight, ExternalLink,
-  CheckCircle2, AlertCircle, Upload
+  CheckCircle2, AlertCircle, Upload, Loader2, Copy, Wand2,
+  ChevronDown
 } from 'lucide-react';
 import { api } from '../../services/api';
 
@@ -106,6 +113,30 @@ type CvMatchRunFull = CvMatchRunSummary & {
   result: MatchResult;
 };
 
+// ----- AI types (v2) -----------------------------------------------------
+
+type AiRefinement = {
+  kind: string;
+  severity: 'high' | 'medium' | 'low';
+  message: string;
+  reasoning?: string;
+};
+
+type AiSummaryTone = 'Confident' | 'Warm' | 'Direct';
+
+type RewriteResponse = {
+  variants: string[];
+  rationale: string;
+};
+
+const AI_REWRITE_KINDS: ReadonlySet<RefinementKind> = new Set([
+  'add_skill', 'strengthen_skill', 'quantify_bullet'
+]);
+
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const ACCEPTED_UPLOAD_TYPES =
+  '.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
 // ----- Helpers ------------------------------------------------------------
 
 const logActivity = (action: string, metadata?: Record<string, unknown>) =>
@@ -167,6 +198,9 @@ export default function CvMatchPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const resultsRef = useRef<HTMLDivElement>(null);
 
+  // Upload state (v2)
+  const [uploading, setUploading] = useState(false);
+
   // ----- Activity: open log (one-shot) ------------------------------------
   const openedRef = useRef(false);
   useEffect(() => {
@@ -191,6 +225,24 @@ export default function CvMatchPage() {
     queryKey: ['opportunities'],
     queryFn: async () => (await api.get('/opportunities')).data.data
   });
+
+  // ----- AI status (v2): cached for a minute -----------------------------
+  const aiStatusQuery = useQuery<{ enabled: boolean }>({
+    queryKey: ['cv-match', 'ai', 'status'],
+    queryFn: async () => {
+      try {
+        const { data } = await api.get('/cv-match/ai/status');
+        // Server may wrap in { data: {...} } or return directly — handle both.
+        const payload = (data?.data ?? data) as { enabled?: boolean };
+        return { enabled: !!payload?.enabled };
+      } catch {
+        return { enabled: false };
+      }
+    },
+    staleTime: 60_000,
+    retry: false
+  });
+  const aiEnabled = !!aiStatusQuery.data?.enabled;
 
   // Auto-pick most recently updated CV when user toggles to "saved_cv"
   // and nothing is selected yet.
@@ -309,6 +361,42 @@ export default function CvMatchPage() {
     });
   }
 
+  // ----- Upload handler (v2: PDF / DOCX) ----------------------------------
+  async function handleUpload(file: File) {
+    if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      toast.error('File too large — keep it under 25 MB.');
+      return;
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    setUploading(true);
+    try {
+      const { data } = await api.post('/cv-match/upload', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      const payload = (data?.data ?? data) as { text: string; charCount: number; format: string };
+      setCvSource('pasted_text');
+      setCvText(payload.text ?? '');
+      toast.success(
+        `Extracted ${(payload.charCount ?? (payload.text?.length ?? 0)).toLocaleString()} characters — review and edit before running the match.`
+      );
+    } catch (e: any) {
+      const code = e?.response?.data?.error?.code ?? e?.response?.data?.code;
+      if (code === 'LEGACY_DOC') {
+        toast.error("Save as .docx and re-upload — legacy .doc isn't supported.");
+      } else if (code === 'UNSUPPORTED_FILE') {
+        toast.error('Only PDF and DOCX files are supported.');
+      } else if (code === 'NO_FILE') {
+        toast.error('No file received — try again.');
+      } else {
+        toast.error("Couldn't read the file — try pasting the text instead.");
+      }
+    } finally {
+      setUploading(false);
+    }
+  }
+
   // ----- Sorted opportunities (cap to 50 most recent) ---------------------
   const opportunities = useMemo(() => {
     const list = opportunitiesQuery.data ?? [];
@@ -341,6 +429,8 @@ export default function CvMatchPage() {
             onCvIdChange={setCvId}
             cvText={cvText}
             onCvTextChange={setCvText}
+            uploading={uploading}
+            onUpload={handleUpload}
           />
 
           {/* Panel 2 — Target job */}
@@ -395,6 +485,10 @@ export default function CvMatchPage() {
                   saving={saveMut.isPending}
                   alreadySaved={!!savedRunId}
                   onRunAgain={handleRunAgain}
+                  aiEnabled={aiEnabled}
+                  runId={savedRunId}
+                  cvText={cvSource === 'pasted_text' ? cvText : ''}
+                  jdText={jdText}
                 />
               </motion.div>
             )}
@@ -490,7 +584,8 @@ function SourceChip({
 // =================== Panel 1: CV ==========================================
 
 function CvPanel({
-  source, onSourceChange, cvs, cvsLoading, cvId, onCvIdChange, cvText, onCvTextChange
+  source, onSourceChange, cvs, cvsLoading, cvId, onCvIdChange, cvText, onCvTextChange,
+  uploading, onUpload
 }: {
   source: CvSource;
   onSourceChange: (s: CvSource) => void;
@@ -500,7 +595,11 @@ function CvPanel({
   onCvIdChange: (id: string) => void;
   cvText: string;
   onCvTextChange: (t: string) => void;
+  uploading: boolean;
+  onUpload: (file: File) => void;
 }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   return (
     <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
       <div className="mb-3 flex items-center gap-2">
@@ -523,13 +622,35 @@ function CvPanel({
         />
         <SourceChip
           active={false}
-          onClick={() => {}}
-          disabled
-          title="PDF / DOCX upload is coming soon"
-          label="Upload PDF / DOCX (coming soon)"
-          icon={<Upload size={14} />}
+          onClick={() => {
+            if (uploading) return;
+            fileInputRef.current?.click();
+          }}
+          disabled={uploading}
+          title={uploading ? 'Extracting text…' : 'Upload a PDF or DOCX CV'}
+          label={uploading ? 'Extracting…' : 'Upload PDF / DOCX'}
+          icon={uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          accept={ACCEPTED_UPLOAD_TYPES}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onUpload(f);
+            // reset so the same file can be picked again later
+            e.target.value = '';
+          }}
         />
       </div>
+
+      {uploading && (
+        <div className="mb-3 flex items-center gap-2 rounded-xl border border-dashed border-[#F59E0B]/40 bg-[#F59E0B]/5 p-3 text-xs text-[var(--fg)]">
+          <Loader2 size={14} className="animate-spin text-[#F59E0B]" />
+          <span>Extracting text from your CV…</span>
+        </div>
+      )}
 
       {source === 'saved_cv' ? (
         <div>
@@ -718,7 +839,8 @@ function RunBar({
 
 function Results({
   result, doneItems, setDoneItems, jdSource, opportunityId,
-  onSave, saving, alreadySaved, onRunAgain
+  onSave, saving, alreadySaved, onRunAgain,
+  aiEnabled, runId, cvText, jdText
 }: {
   result: MatchResult;
   doneItems: Record<number, boolean>;
@@ -729,6 +851,10 @@ function Results({
   saving: boolean;
   alreadySaved: boolean;
   onRunAgain: () => void;
+  aiEnabled: boolean;
+  runId: string | null;
+  cvText: string;
+  jdText: string;
 }) {
   const tone = scoreTone(result.score);
 
@@ -809,6 +935,15 @@ function Results({
         </div>
       </div>
 
+      {/* AI tailored intro (v2) */}
+      {aiEnabled && (
+        <AiTailoredSummary
+          runId={runId}
+          cvText={cvText}
+          jdText={jdText}
+        />
+      )}
+
       {/* Refinement checklist */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
         <div className="mb-4 flex items-center gap-2">
@@ -832,48 +967,22 @@ function Results({
                     {meta.label}
                   </h4>
                   <ul className="space-y-2">
-                    {items.map(({ ref, idx }) => {
-                      const done = !!doneItems[idx];
-                      return (
-                        <li
-                          key={idx}
-                          className={`flex items-start gap-3 rounded-xl border p-3 transition-all ${
-                            done
-                              ? 'border-[#065F46]/30 bg-[#065F46]/5 dark:border-[#84CC16]/30 dark:bg-[#84CC16]/5'
-                              : 'border-[var(--border)] bg-[var(--bg)]/40'
-                          }`}
-                        >
-                          <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${meta.dot}`} />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              {ref.skill && (
-                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${meta.chip}`}>
-                                  {ref.skill}
-                                </span>
-                              )}
-                              <span className={`text-sm ${done ? 'line-through text-[var(--muted)]' : 'text-[var(--fg)]'}`}>
-                                {ref.message}
-                              </span>
-                            </div>
-                            {ref.detail && (
-                              <p className="mt-1 text-xs text-[var(--muted)]">{ref.detail}</p>
-                            )}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => toggleDone(idx)}
-                            className={`flex-shrink-0 inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-semibold transition-all ${
-                              done
-                                ? 'border-[#065F46] bg-[#065F46] text-white dark:border-[#84CC16] dark:bg-[#84CC16] dark:text-stone-900'
-                                : 'border-[var(--border)] bg-[var(--card)] text-[var(--muted)] hover:border-[#065F46]/50'
-                            }`}
-                            aria-pressed={done}
-                          >
-                            <CheckCircle2 size={12} /> {done ? 'Done' : 'Mark done'}
-                          </button>
-                        </li>
-                      );
-                    })}
+                    {items.map(({ ref, idx }) => (
+                      <RefinementItem
+                        key={idx}
+                        ref_={ref}
+                        idx={idx}
+                        meta={meta}
+                        done={!!doneItems[idx]}
+                        onToggleDone={() => toggleDone(idx)}
+                        aiEnabled={aiEnabled}
+                        jdText={jdText}
+                        emphasizeSuggestions={Array.from(new Set([
+                          ...(result.missingSkills ?? []),
+                          ...(result.weakCoverage ?? [])
+                        ]))}
+                      />
+                    ))}
                   </ul>
                 </div>
               );
@@ -883,6 +992,17 @@ function Results({
         <p className="mt-4 text-xs text-[var(--muted)]">
           Toggling "Mark done" is local-only — useful for tracking progress as you edit your CV.
         </p>
+
+        {/* AI refinements panel (v2) */}
+        {aiEnabled && (
+          <AiRefinementsPanel
+            runId={runId}
+            cvText={cvText}
+            jdText={jdText}
+            missingSkills={result.missingSkills ?? []}
+            weakCoverage={result.weakCoverage ?? []}
+          />
+        )}
       </div>
 
       {/* Missing skills + Weak coverage */}
@@ -985,6 +1105,14 @@ function Results({
           {alreadySaved ? 'Saved' : saving ? 'Saving…' : 'Save this run'}
         </button>
       </div>
+
+      {/* AI privacy notice (v2) */}
+      {aiEnabled && (
+        <p className="px-1 text-center text-[11px] leading-relaxed text-[var(--muted)]">
+          AI suggestions are powered by Google Gemini's free tier. Your inputs may be used by Google
+          to improve their models — keep highly sensitive details out.
+        </p>
+      )}
     </div>
   );
 }
@@ -1062,6 +1190,491 @@ function ScoreRing({ value, color }: { value: number; color: string }) {
           {clamped}
         </span>
       </div>
+    </div>
+  );
+}
+
+// =================== AI: Refinement item with composer ====================
+
+function RefinementItem({
+  ref_, idx, meta, done, onToggleDone,
+  aiEnabled, jdText, emphasizeSuggestions
+}: {
+  ref_: Refinement;
+  idx: number;
+  meta: { label: string; dot: string; chip: string };
+  done: boolean;
+  onToggleDone: () => void;
+  aiEnabled: boolean;
+  jdText: string;
+  emphasizeSuggestions: string[];
+}) {
+  const showRewriter = aiEnabled && AI_REWRITE_KINDS.has(ref_.kind);
+  const [composerOpen, setComposerOpen] = useState(false);
+
+  return (
+    <li
+      className={`rounded-xl border p-3 transition-all ${
+        done
+          ? 'border-[#065F46]/30 bg-[#065F46]/5 dark:border-[#84CC16]/30 dark:bg-[#84CC16]/5'
+          : 'border-[var(--border)] bg-[var(--bg)]/40'
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${meta.dot}`} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            {ref_.skill && (
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${meta.chip}`}>
+                {ref_.skill}
+              </span>
+            )}
+            <span className={`text-sm ${done ? 'line-through text-[var(--muted)]' : 'text-[var(--fg)]'}`}>
+              {ref_.message}
+            </span>
+          </div>
+          {ref_.detail && (
+            <p className="mt-1 text-xs text-[var(--muted)]">{ref_.detail}</p>
+          )}
+          {showRewriter && (
+            <button
+              type="button"
+              onClick={() => setComposerOpen((v) => !v)}
+              className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-[#F59E0B] hover:underline"
+            >
+              <Sparkles size={12} />
+              {composerOpen ? 'Hide bullet rewriter' : 'Improve a bullet'}
+            </button>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onToggleDone}
+          className={`flex-shrink-0 inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-semibold transition-all ${
+            done
+              ? 'border-[#065F46] bg-[#065F46] text-white dark:border-[#84CC16] dark:bg-[#84CC16] dark:text-stone-900'
+              : 'border-[var(--border)] bg-[var(--card)] text-[var(--muted)] hover:border-[#065F46]/50'
+          }`}
+          aria-pressed={done}
+        >
+          <CheckCircle2 size={12} /> {done ? 'Done' : 'Mark done'}
+        </button>
+      </div>
+
+      {showRewriter && composerOpen && (
+        <BulletRewriter
+          itemKey={`bullet-rewriter-${idx}`}
+          jdText={jdText}
+          emphasizeSuggestions={emphasizeSuggestions}
+          defaultEmphasize={ref_.skill ? [ref_.skill] : []}
+        />
+      )}
+    </li>
+  );
+}
+
+// =================== AI: Bullet rewriter composer =========================
+
+// Module-level cache so the textarea / chips persist across composer toggles
+// during the page's lifetime (not persisted to localStorage).
+const __bulletComposerCache = new Map<string, { bullet: string; emphasize: string[] }>();
+
+function BulletRewriter({
+  itemKey, jdText, emphasizeSuggestions, defaultEmphasize
+}: {
+  itemKey: string;
+  jdText: string;
+  emphasizeSuggestions: string[];
+  defaultEmphasize: string[];
+}) {
+  const cached = __bulletComposerCache.get(itemKey);
+  const [bullet, setBullet] = useState<string>(cached?.bullet ?? '');
+  const [emphasize, setEmphasize] = useState<string[]>(
+    cached?.emphasize ?? defaultEmphasize.filter((s) => emphasizeSuggestions.includes(s))
+  );
+  const [variants, setVariants] = useState<string[]>([]);
+  const [rationale, setRationale] = useState<string>('');
+
+  // Persist composer state across re-mounts
+  useEffect(() => {
+    __bulletComposerCache.set(itemKey, { bullet, emphasize });
+  }, [itemKey, bullet, emphasize]);
+
+  const rewriteMut = useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post('/cv-match/ai/rewrite-bullet', {
+        bullet: bullet.trim(),
+        jd: jdText,
+        emphasize
+      });
+      const payload = (data?.data ?? data) as RewriteResponse | { enabled: false };
+      return payload;
+    },
+    onSuccess: (payload) => {
+      if ('enabled' in payload && payload.enabled === false) {
+        toast.error('AI rewrites are unavailable right now.');
+        return;
+      }
+      const r = payload as RewriteResponse;
+      setVariants(Array.isArray(r.variants) ? r.variants.slice(0, 3) : []);
+      setRationale(typeof r.rationale === 'string' ? r.rationale : '');
+    },
+    onError: (e: any) => {
+      if (e?.response?.status === 429) {
+        toast.error('Slow down — try again in a minute.');
+      } else {
+        const msg = e?.response?.data?.error?.message
+          ?? e?.response?.data?.message
+          ?? "Couldn't rewrite that bullet — try again.";
+        toast.error(msg);
+      }
+    }
+  });
+
+  function toggleEmphasis(s: string) {
+    setEmphasize((cur) => cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]);
+  }
+
+  function copyVariant(text: string) {
+    navigator.clipboard.writeText(text)
+      .then(() => toast.success('Copied to clipboard'))
+      .catch(() => toast.error('Could not copy'));
+  }
+
+  const canSubmit = bullet.trim().length > 0 && !rewriteMut.isPending;
+
+  return (
+    <div className="mt-3 rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/5 p-3">
+      <div className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#F59E0B]">
+        <Wand2 size={12} /> AI bullet rewriter
+      </div>
+      <textarea
+        className="input min-h-[72px] resize-y text-sm"
+        placeholder="Paste the bullet you want to rewrite…"
+        value={bullet}
+        onChange={(e) => setBullet(e.target.value)}
+        aria-label="Bullet to rewrite"
+      />
+      {emphasizeSuggestions.length > 0 && (
+        <div className="mt-2">
+          <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">
+            Emphasize
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {emphasizeSuggestions.slice(0, 12).map((s) => {
+              const active = emphasize.includes(s);
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => toggleEmphasis(s)}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                    active
+                      ? 'border-[#F59E0B] bg-[#F59E0B] text-white'
+                      : 'border-[var(--border)] bg-[var(--card)] text-[var(--fg)] hover:border-[#F59E0B]/50'
+                  }`}
+                  aria-pressed={active}
+                >
+                  {s}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      <div className="mt-3 flex justify-end">
+        <button
+          type="button"
+          onClick={() => rewriteMut.mutate()}
+          disabled={!canSubmit}
+          className="btn-primary disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {rewriteMut.isPending
+            ? <><Loader2 size={14} className="animate-spin" /> Rewriting…</>
+            : <><Sparkles size={14} /> Rewrite</>}
+        </button>
+      </div>
+
+      {variants.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {variants.map((v, i) => (
+            <div
+              key={i}
+              className="flex items-start gap-2 rounded-lg border border-[var(--border)] bg-[var(--card)] p-3"
+            >
+              <span className="mt-0.5 text-[10px] font-bold text-[#F59E0B]">v{i + 1}</span>
+              <p className="flex-1 text-sm text-[var(--fg)] whitespace-pre-wrap">{v}</p>
+              <button
+                type="button"
+                onClick={() => copyVariant(v)}
+                className="rounded-lg border border-[var(--border)] bg-[var(--bg)]/50 px-2 py-1 text-xs font-semibold text-[var(--muted)] hover:border-[#065F46]/50"
+                title="Copy"
+              >
+                <Copy size={12} />
+              </button>
+            </div>
+          ))}
+          {rationale && (
+            <p className="px-1 text-xs italic text-[var(--muted)]">
+              <span className="font-semibold text-[var(--fg)]">Why these work:</span> {rationale}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =================== AI: Tailored summary card ============================
+
+function AiTailoredSummary({
+  runId, cvText, jdText
+}: {
+  runId: string | null;
+  cvText: string;
+  jdText: string;
+}) {
+  const [tone, setTone] = useState<AiSummaryTone>('Confident');
+  const [summary, setSummary] = useState<string>('');
+  const [hidden, setHidden] = useState(false);
+
+  const summaryMut = useMutation({
+    mutationFn: async () => {
+      const body: Record<string, unknown> = { tone };
+      if (runId) body.runId = runId;
+      else { body.cvText = cvText; body.jdText = jdText; }
+      const { data } = await api.post('/cv-match/ai/summary', body);
+      const payload = (data?.data ?? data) as { summary?: string; enabled?: boolean };
+      return payload;
+    },
+    onSuccess: (payload) => {
+      if (payload.enabled === false) {
+        setHidden(true);
+        return;
+      }
+      setSummary(payload.summary ?? '');
+    },
+    onError: (e: any) => {
+      if (e?.response?.status === 429) {
+        toast.error('Slow down — try again in a minute.');
+      } else {
+        toast.error("Couldn't generate a summary — try again.");
+      }
+    }
+  });
+
+  function copySummary() {
+    navigator.clipboard.writeText(summary)
+      .then(() => toast.success('Copied to clipboard'))
+      .catch(() => toast.error('Could not copy'));
+  }
+
+  if (hidden) return null;
+
+  return (
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
+      <div className="mb-3 flex items-center gap-2">
+        <Sparkles size={18} className="text-[#F59E0B]" />
+        <h3 className="font-heading text-lg font-bold">AI's tailored intro</h3>
+      </div>
+
+      {summary ? (
+        <div>
+          <blockquote className="rounded-xl border-l-4 border-[#F59E0B] bg-[#F59E0B]/5 px-4 py-3 text-sm italic leading-relaxed text-[var(--fg)] whitespace-pre-wrap">
+            {summary}
+          </blockquote>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={copySummary}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-xs font-semibold text-[var(--fg)] hover:border-[#065F46]/50"
+            >
+              <Copy size={12} /> Copy
+            </button>
+            <button
+              type="button"
+              onClick={() => summaryMut.mutate()}
+              disabled={summaryMut.isPending}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-xs font-semibold text-[var(--fg)] hover:border-[#F59E0B]/50 disabled:opacity-60"
+            >
+              {summaryMut.isPending
+                ? <><Loader2 size={12} className="animate-spin" /> Regenerating…</>
+                : <><RotateCcw size={12} /> Regenerate</>}
+            </button>
+            <ToneRow value={tone} onChange={setTone} />
+          </div>
+        </div>
+      ) : (
+        <div>
+          <p className="text-sm text-[var(--muted)]">
+            Generate a 2-3 sentence summary tailored to this JD.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => summaryMut.mutate()}
+              disabled={summaryMut.isPending}
+              className="btn-primary disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {summaryMut.isPending
+                ? <><Loader2 size={14} className="animate-spin" /> Generating…</>
+                : <><Sparkles size={14} /> Generate</>}
+            </button>
+            <ToneRow value={tone} onChange={setTone} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToneRow({
+  value, onChange
+}: { value: AiSummaryTone; onChange: (t: AiSummaryTone) => void }) {
+  const tones: AiSummaryTone[] = ['Confident', 'Warm', 'Direct'];
+  return (
+    <div className="ml-auto flex flex-wrap items-center gap-1.5">
+      <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">
+        Tone
+      </span>
+      {tones.map((t) => {
+        const active = t === value;
+        return (
+          <button
+            key={t}
+            type="button"
+            onClick={() => onChange(t)}
+            className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all ${
+              active
+                ? 'border-[#F59E0B] bg-[#F59E0B] text-white'
+                : 'border-[var(--border)] bg-[var(--card)] text-[var(--muted)] hover:border-[#F59E0B]/50'
+            }`}
+            aria-pressed={active}
+          >
+            {t}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// =================== AI: Refinements panel ================================
+
+function AiRefinementsPanel({
+  runId, cvText, jdText, missingSkills, weakCoverage
+}: {
+  runId: string | null;
+  cvText: string;
+  jdText: string;
+  missingSkills: string[];
+  weakCoverage: string[];
+}) {
+  const [items, setItems] = useState<AiRefinement[]>([]);
+  const [hidden, setHidden] = useState(false);
+  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+
+  const refinementsMut = useMutation({
+    mutationFn: async () => {
+      const body: Record<string, unknown> = {};
+      if (runId) body.runId = runId;
+      else {
+        body.cvText = cvText;
+        body.jdText = jdText;
+        body.missingSkills = missingSkills;
+        body.weakCoverage = weakCoverage;
+      }
+      const { data } = await api.post('/cv-match/ai/refinements', body);
+      const payload = (data?.data ?? data) as { refinements?: AiRefinement[]; enabled?: boolean };
+      return payload;
+    },
+    onSuccess: (payload) => {
+      if (payload.enabled === false) {
+        setHidden(true);
+        return;
+      }
+      const list = Array.isArray(payload.refinements) ? payload.refinements.slice(0, 6) : [];
+      setItems(list);
+      setExpanded({});
+    },
+    onError: (e: any) => {
+      if (e?.response?.status === 429) {
+        toast.error('Slow down — try again in a minute.');
+      } else {
+        toast.error("Couldn't fetch AI refinements — try again.");
+      }
+    }
+  });
+
+  if (hidden) return null;
+
+  return (
+    <div className="mt-6 border-t border-dashed border-[var(--border)] pt-5">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <h4 className="font-heading text-sm font-bold text-[var(--fg)]">AI's take</h4>
+          <Sparkles size={14} className="text-[#F59E0B]" />
+        </div>
+        <button
+          type="button"
+          onClick={() => refinementsMut.mutate()}
+          disabled={refinementsMut.isPending}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-[#F59E0B]/40 bg-[#F59E0B]/10 px-3 py-1.5 text-xs font-semibold text-[#F59E0B] hover:bg-[#F59E0B]/20 disabled:opacity-60"
+        >
+          {refinementsMut.isPending
+            ? <><Loader2 size={12} className="animate-spin" /> Thinking…</>
+            : <><Sparkles size={12} /> {items.length > 0 ? 'Refresh AI refinements' : 'Add AI refinements'}</>}
+        </button>
+      </div>
+
+      {items.length > 0 && (
+        <ul className="space-y-2">
+          {items.map((r, idx) => {
+            const sev = (['high', 'medium', 'low'] as const).includes(r.severity)
+              ? r.severity
+              : 'medium';
+            const meta = SEVERITY_META[sev];
+            const isOpen = !!expanded[idx];
+            return (
+              <li
+                key={idx}
+                className="rounded-xl border border-[var(--border)] bg-[var(--bg)]/40 p-3"
+              >
+                <div className="flex items-start gap-3">
+                  <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${meta.dot}`} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-1 text-sm text-[var(--fg)]">
+                        <Sparkles size={12} className="text-[#F59E0B]" />
+                        {r.message}
+                      </span>
+                    </div>
+                    {r.reasoning && (
+                      <button
+                        type="button"
+                        onClick={() => setExpanded((cur) => ({ ...cur, [idx]: !cur[idx] }))}
+                        className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--muted)] hover:text-[var(--fg)]"
+                        aria-expanded={isOpen}
+                      >
+                        <ChevronDown
+                          size={12}
+                          className={`transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                        />
+                        {isOpen ? 'Hide reasoning' : 'Reasoning'}
+                      </button>
+                    )}
+                    {isOpen && r.reasoning && (
+                      <p className="mt-1 rounded-lg bg-[var(--bg)]/70 px-2 py-1.5 text-xs italic text-[var(--muted)] whitespace-pre-wrap">
+                        {r.reasoning}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
