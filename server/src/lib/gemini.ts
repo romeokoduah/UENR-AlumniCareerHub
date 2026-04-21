@@ -243,9 +243,16 @@ export async function geminiChat(
   userMessage: string,
   opts: { model?: string; temperature?: number; maxOutputTokens?: number } = {}
 ): Promise<GeminiChatResult> {
-  if (!(await isAiEnabled())) return null;
+  lastGeminiError = null;
+  if (!(await isAiEnabled())) {
+    lastGeminiError = `chat early-return: isAiEnabled=false (key=${!!process.env.GOOGLE_GEMINI_API_KEY})`;
+    return null;
+  }
   const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) {
+    lastGeminiError = 'chat early-return: GOOGLE_GEMINI_API_KEY missing';
+    return null;
+  }
 
   const model = opts.model ?? DEFAULT_MODEL;
   const temperature = opts.temperature ?? 0.7;
