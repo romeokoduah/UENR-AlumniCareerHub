@@ -273,6 +273,7 @@ export async function geminiChat(
     }
   };
 
+  lastGeminiError = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await withTimeout(
@@ -308,13 +309,14 @@ export async function geminiChat(
 
       if (!text) {
         const finish = json.candidates?.[0]?.finishReason ?? 'unknown';
-        throw new Error(`gemini empty (finishReason=${finish})`);
+        throw new Error(`gemini chat empty (finishReason=${finish})`);
       }
 
       console.log(`[gemini] chat tokens=${tokensUsed} model=${model}`);
       return { text, tokensUsed };
     } catch (err) {
       const msg = (err as Error).message;
+      lastGeminiError = `chat attempt ${attempt + 1}: ${msg}`;
       const last = attempt === 1;
       if (last || !isTransient(err)) {
         console.warn(`[gemini] chat failed (${msg}) — returning null`);
