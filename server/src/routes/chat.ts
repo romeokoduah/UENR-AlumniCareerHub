@@ -1,19 +1,19 @@
+// Chat-style AI endpoints — backs CareerMate (the floating chatbot),
+// the legacy CV reviewer, and the legacy mock interviewer. All three
+// run through Google Gemini via lib/gemini.geminiChat — the same key
+// + model the CV Match v3 / ATS v2 surfaces use, so the project only
+// has one AI vendor to maintain.
+
 import { Router } from 'express';
-import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { optionalAuth } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
+import { geminiChat, isAiEnabled } from '../lib/gemini.js';
 
 const router = Router();
 
-const client = process.env.ANTHROPIC_API_KEY
-  ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-  : null;
-
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
-
-const SYSTEM_PROMPT = `You are CareerMate, the friendly AI career assistant for UENR Alumni Career Hub — a platform for University of Energy and Natural Resources (Ghana) students and alumni.
+const CAREERMATE_SYSTEM = `You are CareerMate, the friendly AI career assistant for UENR Alumni Career Hub — a platform for University of Energy and Natural Resources (Ghana) students and alumni.
 
 Your vibe: warm, encouraging, like a smart older sibling who's been through it. Ghanaian context aware. Tone is upbeat, practical, actionable.
 
@@ -26,6 +26,14 @@ You help with:
 - Using the platform (jobs, mentorship, events)
 
 Keep answers concise, bulleted when useful, and always end with a concrete next step the user can take today.`;
+
+const KEY_MISSING_REPLY =
+  "Hi! I'm CareerMate. The site is missing GOOGLE_GEMINI_API_KEY — once your admin adds it, I'll be able to give you real career guidance. In the meantime, try the Career Tools hub for CV building, mentorship, and the job board.";
+
+const CV_REVIEW_SYSTEM =
+  'You are a professional CV reviewer. Give actionable feedback on structure, content, ATS-friendliness, grammar, and impact statements. Be specific and encouraging. Use bulleted lists when listing issues.';
+
+// --- /careermate ---------------------------------------------------------
 
 const messageSchema = z.object({
   sessionId: z.string().min(1),
@@ -40,76 +48,78 @@ router.post('/careermate', optionalAuth, validate(messageSchema), async (req, re
   try {
     const { sessionId, message, history } = req.body as z.infer<typeof messageSchema>;
 
-    if (!client) {
-      return res.json({
-        success: true,
-        data: {
-          reply: "Hi! I'm CareerMate. The server is missing ANTHROPIC_API_KEY — once your admin adds it, I'll be able to give you real career guidance. In the meantime, check out the Opportunity Board and Scholarships pages!"
-        }
-      });
+    if (!(await isAiEnabled())) {
+      return res.json({ success: true, data: { reply: KEY_MISSING_REPLY } });
     }
 
     await prisma.chatMessage.create({
-      data: { sessionId, userId: req.auth?.sub, role: 'user', content: message }
-    }).catch(() => {});
+      data: { sessionId, userId: req.auth?.sub ?? null, role: 'user', content: message }
+    }).catch(() => { /* best-effort */ });
 
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 1024,
-      system: SYSTEM_PROMPT,
-      messages: [
-        ...history.map(h => ({ role: h.role, content: h.content })),
-        { role: 'user' as const, content: message }
-      ]
+    const result = await geminiChat(CAREERMATE_SYSTEM, history, message, {
+      maxOutputTokens: 1024,
+      temperature: 0.7
     });
 
-    const reply = response.content
-      .filter(b => b.type === 'text')
-      .map(b => (b as any).text)
-      .join('\n');
+    const reply = result?.text
+      ?? "I couldn't reach the AI just now. Try again in a moment, or browse the Career Tools hub while we look at this.";
 
     await prisma.chatMessage.create({
-      data: { sessionId, userId: req.auth?.sub, role: 'assistant', content: reply }
-    }).catch(() => {});
+      data: { sessionId, userId: req.auth?.sub ?? null, role: 'assistant', content: reply }
+    }).catch(() => { /* best-effort */ });
 
     res.json({ success: true, data: { reply } });
   } catch (e) { next(e); }
 });
 
+// --- /cv-review ----------------------------------------------------------
+
 router.post('/cv-review', optionalAuth, async (req, res, next) => {
   try {
-    const { cvText } = req.body as { cvText: string };
-    if (!client) return res.json({ success: true, data: { feedback: 'AI review unavailable — set ANTHROPIC_API_KEY.' } });
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 1500,
-      system: 'You are a professional CV reviewer. Give actionable feedback on structure, content, ATS-friendliness, grammar, and impact statements. Be specific and encouraging.',
-      messages: [{ role: 'user', content: `Review this CV:\n\n${cvText}` }]
-    });
-    const feedback = response.content.filter(b => b.type === 'text').map(b => (b as any).text).join('\n');
+    const { cvText } = req.body as { cvText?: string };
+    if (!cvText) {
+      return res.status(400).json({ success: false, error: { code: 'NO_CV', message: 'cvText is required' } });
+    }
+    if (!(await isAiEnabled())) {
+      return res.json({ success: true, data: { feedback: 'AI review unavailable — set GOOGLE_GEMINI_API_KEY.' } });
+    }
+    const result = await geminiChat(
+      CV_REVIEW_SYSTEM,
+      [],
+      `Review this CV:\n\n${cvText.slice(0, 12_000)}`,
+      { maxOutputTokens: 1500, temperature: 0.5 }
+    );
+    const feedback = result?.text ?? "Couldn't reach the AI for review. Try again shortly.";
     res.json({ success: true, data: { feedback } });
   } catch (e) { next(e); }
 });
 
+// --- /mock-interview -----------------------------------------------------
+
 router.post('/mock-interview', optionalAuth, async (req, res, next) => {
   try {
-    const { industry, role, difficulty, history = [], userAnswer } = req.body;
-    if (!client) return res.json({ success: true, data: { message: 'AI interviewer unavailable — set ANTHROPIC_API_KEY.' } });
+    const { industry, role, difficulty, history = [], userAnswer } = req.body as {
+      industry?: string;
+      role?: string;
+      difficulty?: string;
+      history?: { role: 'user' | 'assistant'; content: string }[];
+      userAnswer?: string;
+    };
+
+    if (!(await isAiEnabled())) {
+      return res.json({ success: true, data: { reply: 'AI interviewer unavailable — set GOOGLE_GEMINI_API_KEY.' } });
+    }
 
     const system = `You are an interviewer for a ${difficulty || 'mid-level'} ${role || 'professional'} role in ${industry || 'general industry'}. Ask ONE realistic interview question at a time (mix behavioral + technical). After the candidate answers, give brief feedback (strengths, improvements, STAR-rewrite if applicable) and then ask the next question. Keep it encouraging.`;
 
-    const messages = [
-      ...history,
-      ...(userAnswer ? [{ role: 'user' as const, content: userAnswer }] : [{ role: 'user' as const, content: 'Start the interview.' }])
-    ];
+    const userMessage = userAnswer ?? 'Start the interview.';
 
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 800,
-      system,
-      messages
+    const result = await geminiChat(system, history, userMessage, {
+      maxOutputTokens: 800,
+      temperature: 0.6
     });
-    const reply = response.content.filter(b => b.type === 'text').map(b => (b as any).text).join('\n');
+
+    const reply = result?.text ?? "I couldn't reach the AI right now — give it another moment.";
     res.json({ success: true, data: { reply } });
   } catch (e) { next(e); }
 });

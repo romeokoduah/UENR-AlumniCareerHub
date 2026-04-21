@@ -223,3 +223,105 @@ export async function geminiJson<T>(
   }
   return null;
 }
+
+// =========================================================================
+// geminiChat — plain-text conversational call. Used by CareerMate, the
+// CV reviewer, and the mock interviewer (none of which want structured
+// JSON; they want natural language back).
+// =========================================================================
+
+export type GeminiChatTurn = { role: 'user' | 'assistant'; content: string };
+
+export type GeminiChatResult = {
+  text: string;
+  tokensUsed: number;
+} | null;
+
+export async function geminiChat(
+  systemPrompt: string,
+  history: GeminiChatTurn[],
+  userMessage: string,
+  opts: { model?: string; temperature?: number; maxOutputTokens?: number } = {}
+): Promise<GeminiChatResult> {
+  if (!(await isAiEnabled())) return null;
+  const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
+  if (!apiKey) return null;
+
+  const model = opts.model ?? DEFAULT_MODEL;
+  const temperature = opts.temperature ?? 0.7;
+  const maxOutputTokens = opts.maxOutputTokens ?? 1024;
+
+  const url = `${GEMINI_BASE}/${encodeURIComponent(model)}:generateContent?key=${apiKey}`;
+
+  // Gemini wants alternating user / model turns. Map our history shape
+  // ('assistant' -> 'model') and append the new user message.
+  const contents = [
+    ...history.map((h) => ({
+      role: h.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: h.content }]
+    })),
+    { role: 'user', parts: [{ text: userMessage }] }
+  ];
+
+  const body = {
+    contents,
+    systemInstruction: { role: 'user', parts: [{ text: systemPrompt }] },
+    generationConfig: {
+      temperature,
+      maxOutputTokens,
+      thinkingConfig: { thinkingBudget: 0 }
+    }
+  };
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await withTimeout(
+        fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        }),
+        TIMEOUT_MS
+      );
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`gemini ${res.status}: ${errText.slice(0, 300)}`);
+      }
+
+      const json = await res.json() as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>;
+        usageMetadata?: { totalTokenCount?: number };
+        promptFeedback?: { blockReason?: string };
+      };
+
+      if (json.promptFeedback?.blockReason) {
+        throw new Error(`gemini blocked: ${json.promptFeedback.blockReason}`);
+      }
+
+      const text = (json.candidates ?? [])
+        .flatMap((c) => c.content?.parts ?? [])
+        .map((p) => p.text ?? '')
+        .join('')
+        .trim();
+      const tokensUsed = json.usageMetadata?.totalTokenCount ?? 0;
+
+      if (!text) {
+        const finish = json.candidates?.[0]?.finishReason ?? 'unknown';
+        throw new Error(`gemini empty (finishReason=${finish})`);
+      }
+
+      console.log(`[gemini] chat tokens=${tokensUsed} model=${model}`);
+      return { text, tokensUsed };
+    } catch (err) {
+      const msg = (err as Error).message;
+      const last = attempt === 1;
+      if (last || !isTransient(err)) {
+        console.warn(`[gemini] chat failed (${msg}) — returning null`);
+        return null;
+      }
+      await new Promise((r) => setTimeout(r, 250));
+    }
+  }
+  return null;
+}
