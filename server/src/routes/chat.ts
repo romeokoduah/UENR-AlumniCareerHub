@@ -73,20 +73,30 @@ router.post('/careermate', optionalAuth, validate(messageSchema), async (req, re
       temperature: 0.7
     });
 
-    const reply = result?.text
-      ?? "I couldn't reach the AI just now. Try again in a moment, or browse the Career Tools hub while we look at this.";
+    let reply: string;
+    if (result?.text) {
+      reply = result.text;
+    } else {
+      // Translate the underlying Gemini error into a human-readable
+      // message. The free-tier 429 (quota exhausted) is by far the most
+      // common failure mode in production, so call it out explicitly.
+      const err = getLastGeminiError() ?? '';
+      if (err.includes('429') || /quota/i.test(err)) {
+        reply = "I've hit my daily AI quota — Google's free tier resets at midnight Pacific Time. Try me again then, or your admin can lift the cap by enabling billing on the Gemini API. Meanwhile, the Career Tools hub still works normally.";
+      } else if (/blocked/i.test(err)) {
+        reply = "I couldn't answer that one — the model's safety filter blocked the response. Try rephrasing the question?";
+      } else if (/timeout/i.test(err)) {
+        reply = "The AI took too long to answer that one. Try again in a moment, or rephrase shorter and more specific.";
+      } else {
+        reply = "I couldn't reach the AI just now. Try again in a moment, or browse the Career Tools hub while we look at this.";
+      }
+    }
 
     await prisma.chatMessage.create({
       data: { sessionId, userId: req.auth?.sub ?? null, role: 'assistant', content: reply }
     }).catch(() => { /* best-effort */ });
 
-    // Debug field surfaces the underlying Gemini failure when the reply
-    // is the fallback string. Removed once we're confident in the pipeline.
-    const responseData: { reply: string; debug?: string | null } = { reply };
-    if (!result) {
-      responseData.debug = getLastGeminiError();
-    }
-    res.json({ success: true, data: responseData });
+    res.json({ success: true, data: { reply } });
   } catch (e) { next(e); }
 });
 

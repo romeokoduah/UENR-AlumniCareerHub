@@ -46,11 +46,7 @@ export function CareerMateWidget() {
           .filter((m) => !m.content.startsWith('Oops, I hit a snag'))
       });
       const reply = data?.data?.reply ?? '';
-      const debug = data?.data?.debug as string | undefined;
-      const finalReply = debug
-        ? `${reply}\n\n_(debug: ${debug})_`
-        : reply;
-      setMessages((m) => [...m, { role: 'assistant', content: finalReply }]);
+      setMessages((m) => [...m, { role: 'assistant', content: reply }]);
     } catch (err: any) {
       const detail = err?.response?.data?.error?.message ?? err?.message ?? 'unknown error';
       setMessages((m) => [...m, { role: 'assistant', content: `Oops, I hit a snag. (${detail}) — mind trying again in a moment?` }]);
