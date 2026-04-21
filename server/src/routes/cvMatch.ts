@@ -634,7 +634,7 @@ router.post('/ai/summary', requireAuth, aiLimiter, async (req, res, next) => {
     );
 
     if (!result) {
-      return res.json({ success: true, data: { enabled: false, debug: getLastGeminiError() } });
+      return res.json({ success: true, data: { enabled: false } });
     }
 
     const summary = (result.data.summary ?? '').trim();
