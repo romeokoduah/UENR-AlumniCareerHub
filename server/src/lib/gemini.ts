@@ -124,7 +124,12 @@ async function attemptOnce<T>(
       temperature,
       maxOutputTokens,
       responseMimeType: 'application/json',
-      responseSchema: schemaShape
+      responseSchema: schemaShape,
+      // gemini-2.5-flash counts thinking tokens against maxOutputTokens
+      // by default, which truncates the actual JSON answer. Set the
+      // thinking budget to 0 so the entire output budget goes to the
+      // user-visible response. Older models (1.5/2.0) ignore this field.
+      thinkingConfig: { thinkingBudget: 0 }
     }
   };
 
