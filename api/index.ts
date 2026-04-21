@@ -11,4 +11,5 @@
 import app from '../server/src/app.js';
 
 // Bumped 2026-04-21 to bust Vercel's function bundle cache.
+// Bumped again 2026-04-21 (chat.ts debug surfacing).
 export default app;
