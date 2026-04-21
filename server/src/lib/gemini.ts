@@ -31,10 +31,15 @@ export type GeminiResult<T> = {
   cached: boolean;
 } | null;
 
-const DEFAULT_MODEL = 'gemini-2.0-flash';
+// Free-tier API keys created in late 2025 / early 2026 are gated to
+// gemini-2.5-flash (gemini-2.0-flash returns "limit: 0" 429s for new
+// projects). 2.5-flash is slower per-token because of its thinking
+// budget but more capable per-token, and the free tier still covers
+// our scale (~250 RPD, 250k TPM).
+const DEFAULT_MODEL = 'gemini-2.5-flash';
 const DEFAULT_TEMPERATURE = 0.3;
 const DEFAULT_MAX_TOKENS = 1024;
-const TIMEOUT_MS = 6000;
+const TIMEOUT_MS = 12000;
 
 // ---- feature-flag / env gating -------------------------------------------
 
