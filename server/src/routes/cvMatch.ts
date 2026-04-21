@@ -25,9 +25,19 @@ import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
-import { runCvMatch, type MatchInput, type Refinement } from '../lib/cvMatch.js';
-import { geminiJson, isAiEnabled, getLastGeminiError } from '../lib/gemini.js';
+import { runCvMatch, type MatchInput, type Refinement, type MatchResult } from '../lib/cvMatch.js';
+import { geminiJson, isAiEnabled } from '../lib/gemini.js';
 import { logAudit } from '../lib/audit.js';
+import { checkAiQuota, noteAiCallUsed } from '../lib/aiQuota.js';
+import {
+  aiExtract,
+  aiScore,
+  aiRefinements as aiRefinementsCall,
+  aiSummary as aiSummaryCall,
+  type AiExtraction,
+  type AiScoreResult,
+  type AiRefinement as AiRefinementType
+} from '../lib/aiCvMatch.js';
 
 const router = Router();
 
@@ -98,13 +108,228 @@ function mapDomainError(res: Response, err: unknown): boolean {
   return false;
 }
 
+// ---- v3 AI augmentation --------------------------------------------------
+//
+// `augmentWithAi` is the single entry point for /analyse + /runs. It runs
+// the deterministic baseline first (caller's job), then layers Gemini on
+// top when the feature flag + per-day quota permit. AI scores/breakdowns
+// override the deterministic ones in the headline; the deterministic
+// result is preserved under `data.deterministic` so the UI can show both.
+//
+// Failure modes: returns `{ ...baseline, aiSkipped: { reason } }` when AI
+// is disabled, over quota, or the model failed. NEVER throws.
+
+type AiSkippedReason = 'disabled' | 'rate_limited' | 'failed';
+
+type AiSnapshot = {
+  score: number;
+  breakdown: AiScoreResult['breakdown'];
+  reasoning: string;
+  softSignals: string[];
+  industry: string | null;
+  seniority: AiExtraction['seniority'];
+  refinements: AiRefinementType[];
+  summary: string;
+  tokensUsed: number;
+};
+
+export type AugmentedMatchResult = MatchResult & {
+  ai?: AiSnapshot;
+  deterministic?: { score: number; breakdown: MatchResult['breakdown'] };
+  aiSkipped?: { reason: AiSkippedReason };
+};
+
+// Resolve the CV body for AI prompts. Mirrors the logic the v2 /ai/*
+// routes use for persisted runs (`hydrateRunCvText`), but operates on
+// raw MatchInput so /analyse + /runs can share it.
+async function resolveCvText(userId: string, input: MatchInput): Promise<string> {
+  if (input.cvSource === 'pasted_text') return input.cvText ?? '';
+  if (input.cvSource === 'saved_cv' && input.cvId) {
+    const cvRow = await prisma.cV.findFirst({
+      where: { id: input.cvId, userId },
+      select: { data: true }
+    }).catch(() => null);
+    if (!cvRow) return '';
+    const data = (cvRow.data ?? {}) as {
+      personal?: { fullName?: string };
+      summary?: string;
+      experience?: Array<{ company?: string; role?: string; bullets?: string[] }>;
+      education?: Array<{ school?: string; degree?: string; field?: string }>;
+      skills?: string[];
+      projects?: Array<{ name?: string; description?: string; tech?: string[] }>;
+    };
+    const parts: string[] = [];
+    if (data.personal?.fullName) parts.push(data.personal.fullName);
+    if (data.summary) parts.push(`Summary: ${data.summary}`);
+    if (Array.isArray(data.skills) && data.skills.length) {
+      parts.push(`Skills: ${data.skills.join(', ')}`);
+    }
+    for (const exp of data.experience ?? []) {
+      const header = [exp.role, exp.company].filter(Boolean).join(' @ ');
+      if (header) parts.push(header);
+      if (exp.bullets?.length) parts.push(exp.bullets.map((b) => `- ${b}`).join('\n'));
+    }
+    for (const edu of data.education ?? []) {
+      const line = [edu.degree, edu.field, edu.school].filter(Boolean).join(' — ');
+      if (line) parts.push(line);
+    }
+    for (const proj of data.projects ?? []) {
+      const line = [proj.name, proj.description].filter(Boolean).join(': ');
+      if (line) parts.push(line);
+    }
+    return parts.join('\n\n');
+  }
+  return '';
+}
+
+// Resolve the JD text similarly (for saved opportunities).
+async function resolveJdText(input: MatchInput, fallbackTitle: string | undefined): Promise<{ jdText: string; jobTitle?: string }> {
+  if (input.jdSource === 'saved_opportunity' && input.opportunityId) {
+    const opp = await prisma.opportunity.findUnique({
+      where: { id: input.opportunityId },
+      select: { title: true, description: true, requiredSkills: true, preferredSkills: true }
+    }).catch(() => null);
+    if (!opp) return { jdText: input.jdText ?? '', jobTitle: fallbackTitle };
+    const text = [
+      opp.description,
+      opp.requiredSkills?.length ? `Required: ${opp.requiredSkills.join(', ')}` : '',
+      opp.preferredSkills?.length ? `Preferred: ${opp.preferredSkills.join(', ')}` : ''
+    ].filter(Boolean).join('\n\n');
+    return { jdText: text, jobTitle: input.jobTitle ?? opp.title };
+  }
+  return { jdText: input.jdText ?? '', jobTitle: input.jobTitle ?? fallbackTitle };
+}
+
+async function logCvMatchAiCall(
+  userId: string,
+  kind: 'extract' | 'score' | 'refinements' | 'summary',
+  tokens: number,
+  cached: boolean
+) {
+  // Mirror the v2 convention: cache hits don't represent new spend so we
+  // skip writing them to the audit + activity feeds.
+  if (cached) return;
+  await logAudit({
+    actorId: userId,
+    action: 'cv_match.ai_call',
+    metadata: { kind, tokens, cached }
+  });
+  await prisma.careerToolsActivity.create({
+    data: {
+      userId,
+      tool: 'cv-match',
+      action: 'ai_call',
+      metadata: { kind, tokens }
+    }
+  }).catch(() => undefined);
+}
+
+async function augmentWithAi(
+  userId: string,
+  input: MatchInput,
+  baseline: MatchResult
+): Promise<AugmentedMatchResult> {
+  // Three short-circuit paths — each returns the deterministic baseline
+  // plus an `aiSkipped` reason so the UI can render a tiny "AI off" badge.
+  if (!(await isAiEnabled())) {
+    return { ...baseline, aiSkipped: { reason: 'disabled' } };
+  }
+  const quota = await checkAiQuota(userId);
+  if (!quota.allowed) {
+    return { ...baseline, aiSkipped: { reason: 'rate_limited' } };
+  }
+
+  // Pull the actual CV + JD text (same logic as the v2 /ai/* routes).
+  const cvText = await resolveCvText(userId, input);
+  const { jdText } = await resolveJdText(input, baseline.derivedFromJd.jobTitle);
+  if (!cvText.trim() || !jdText.trim()) {
+    return { ...baseline, aiSkipped: { reason: 'failed' } };
+  }
+
+  // Step 1: extraction (sequential — score/refinements/summary need it).
+  const extraction = await aiExtract(cvText, jdText, input.jobTitle).catch(() => null);
+  if (!extraction) {
+    return { ...baseline, aiSkipped: { reason: 'failed' } };
+  }
+  await logCvMatchAiCall(userId, 'extract', extraction.tokensUsed, extraction.cached);
+  if (!extraction.cached) noteAiCallUsed(userId);
+
+  // Step 2: score + refinements + summary in parallel. We tolerate any
+  // one of them failing — only the score is load-bearing for the headline,
+  // so if score fails we still fall back to deterministic.
+  const [scoreRes, refinementsRes, summaryRes] = await Promise.all([
+    aiScore(cvText, jdText, extraction.data).catch(() => null),
+    aiRefinementsCall(cvText, jdText, extraction.data).catch(() => null),
+    aiSummaryCall(cvText, jdText, 'confident').catch(() => null)
+  ]);
+
+  if (scoreRes) {
+    await logCvMatchAiCall(userId, 'score', scoreRes.tokensUsed, scoreRes.cached);
+    if (!scoreRes.cached) noteAiCallUsed(userId);
+  }
+  if (refinementsRes) {
+    await logCvMatchAiCall(userId, 'refinements', refinementsRes.tokensUsed, refinementsRes.cached);
+    if (!refinementsRes.cached) noteAiCallUsed(userId);
+  }
+  if (summaryRes) {
+    await logCvMatchAiCall(userId, 'summary', summaryRes.tokensUsed, summaryRes.cached);
+    if (!summaryRes.cached) noteAiCallUsed(userId);
+  }
+
+  if (!scoreRes) {
+    // Score is the headline — without it AI augmentation isn't worth the
+    // half-data shape. Fall back fully to deterministic.
+    return { ...baseline, aiSkipped: { reason: 'failed' } };
+  }
+
+  const aiRefs = refinementsRes?.data ?? [];
+  const aiSummaryText = summaryRes?.data.summary ?? '';
+  const totalTokens =
+    extraction.tokensUsed +
+    scoreRes.tokensUsed +
+    (refinementsRes?.tokensUsed ?? 0) +
+    (summaryRes?.tokensUsed ?? 0);
+
+  const ai: AiSnapshot = {
+    score: scoreRes.data.score,
+    breakdown: scoreRes.data.breakdown,
+    reasoning: scoreRes.data.reasoning,
+    softSignals: extraction.data.softSignals,
+    industry: extraction.data.industry,
+    seniority: extraction.data.seniority,
+    refinements: aiRefs,
+    summary: aiSummaryText,
+    tokensUsed: totalTokens
+  };
+
+  // Merge AI refinements onto the deterministic ones, tagging the AI
+  // ones so the UI can render them differently. Deterministic refinements
+  // come first — they're already sorted by severity/kind.
+  const taggedAi = aiRefs.map((r) => ({ ...r, source: 'ai' as const }));
+  const mergedRefinements = [...baseline.refinements, ...(taggedAi as unknown as Refinement[])];
+
+  return {
+    ...baseline,
+    score: ai.score,
+    refinements: mergedRefinements,
+    deterministic: { score: baseline.score, breakdown: baseline.breakdown },
+    ai
+  };
+}
+
 // ---- /analyse ------------------------------------------------------------
 
 router.post('/analyse', requireAuth, async (req, res, next) => {
   try {
     const parsed = matchInputSchema.parse(req.body);
-    const result = await runCvMatch(req.auth!.sub, toMatchInput(parsed));
-    res.json({ success: true, data: result });
+    const input = toMatchInput(parsed);
+    const userId = req.auth!.sub;
+    const baseline = await runCvMatch(userId, input);
+
+    // v3: try AI augmentation. Falls through to deterministic baseline if
+    // disabled, over quota, or the model fails — never throws.
+    const augmented = await augmentWithAi(userId, input, baseline);
+    res.json({ success: true, data: augmented });
   } catch (e) {
     if (mapDomainError(res, e)) return;
     next(e);
@@ -136,11 +361,17 @@ router.post('/runs', requireAuth, async (req, res, next) => {
   try {
     const parsed = matchInputSchema.parse(req.body);
     const input = toMatchInput(parsed);
-    const result = await runCvMatch(req.auth!.sub, input);
+    const userId = req.auth!.sub;
+    const baseline = await runCvMatch(userId, input);
+
+    // v3: AI-augment first so we can persist snapshot fields. The
+    // baseline is always returned in result.deterministic when AI ran.
+    const augmented = await augmentWithAi(userId, input, baseline);
+    const aiSnapshot = augmented.ai ?? null;
 
     const run = await prisma.cvMatchRun.create({
       data: {
-        userId: req.auth!.sub,
+        userId,
         cvSource: input.cvSource,
         cvId: input.cvSource === 'saved_cv' ? (input.cvId ?? null) : null,
         // We persist the pasted CV text so a returning user can see exactly
@@ -150,29 +381,51 @@ router.post('/runs', requireAuth, async (req, res, next) => {
         jdSource: input.jdSource,
         opportunityId: input.jdSource === 'saved_opportunity' ? (input.opportunityId ?? null) : null,
         jdText: input.jdText,
-        jobTitle: result.derivedFromJd.jobTitle ?? input.jobTitle ?? null,
-        cvSkills: result.derivedFromCv.skills,
-        jdRequired: result.derivedFromJd.required,
-        jdPreferred: result.derivedFromJd.preferred,
-        jdYearsRequired: result.derivedFromJd.yearsRequired ?? null,
-        score: result.score,
-        breakdown: result.breakdown as unknown as object,
-        refinements: result.refinements as unknown as object,
-        missingSkills: result.missingSkills
+        jobTitle: augmented.derivedFromJd.jobTitle ?? input.jobTitle ?? null,
+        cvSkills: augmented.derivedFromCv.skills,
+        jdRequired: augmented.derivedFromJd.required,
+        jdPreferred: augmented.derivedFromJd.preferred,
+        jdYearsRequired: augmented.derivedFromJd.yearsRequired ?? null,
+        // Headline score is the augmented one — when AI ran this is the AI
+        // score, otherwise it's the deterministic score. Same for breakdown
+        // (deterministic shape) — we keep the deterministic breakdown in the
+        // `breakdown` column so existing v1 readers don't break, and put the
+        // AI six-axis breakdown in `aiBreakdown`.
+        score: augmented.score,
+        breakdown: baseline.breakdown as unknown as object,
+        refinements: augmented.refinements as unknown as object,
+        missingSkills: augmented.missingSkills,
+        // v3 snapshot fields — null when AI didn't run.
+        aiScore: aiSnapshot?.score ?? null,
+        aiBreakdown: aiSnapshot?.breakdown ? (aiSnapshot.breakdown as unknown as object) : undefined,
+        aiReasoning: aiSnapshot?.reasoning ?? null,
+        aiSoftSignals: aiSnapshot?.softSignals ?? [],
+        aiIndustry: aiSnapshot?.industry ?? null,
+        aiSeniority: aiSnapshot?.seniority ?? null,
+        aiRefinements: aiSnapshot?.refinements
+          ? (aiSnapshot.refinements as unknown as object)
+          : undefined,
+        aiSummary: aiSnapshot?.summary ?? null,
+        aiCostTokens: aiSnapshot?.tokensUsed ?? null
       }
     });
 
     // Best-effort activity log so this run shows up in /career-tools/activity.
     await prisma.careerToolsActivity.create({
       data: {
-        userId: req.auth!.sub,
+        userId,
         tool: 'cv-match',
         action: 'run',
-        metadata: { runId: run.id, score: result.score, jobTitle: run.jobTitle }
+        metadata: {
+          runId: run.id,
+          score: augmented.score,
+          jobTitle: run.jobTitle,
+          aiUsed: !!aiSnapshot
+        }
       }
     }).catch(() => undefined);
 
-    res.status(201).json({ success: true, data: { run, result } });
+    res.status(201).json({ success: true, data: { run, result: augmented } });
   } catch (e) {
     if (mapDomainError(res, e)) return;
     next(e);
@@ -438,6 +691,17 @@ router.post('/ai/refinements', requireAuth, aiLimiter, async (req, res, next) =>
       return badRequest(res, 'Both CV and JD text are required to generate AI refinements.');
     }
 
+    // Per-user-per-day cap shared with /analyse + /runs + ATS. Fall
+    // through to the same `{ enabled: false }` shape the missing-key
+    // path returns so the client doesn't have to special-case quota.
+    const quota = await checkAiQuota(req.auth!.sub);
+    if (!quota.allowed) {
+      return res.json({
+        success: true,
+        data: { enabled: false, refinements: [], reason: 'rate_limited' }
+      });
+    }
+
     const prompt = buildRefinementsPrompt(cvText, jdText, missingSkills, weakCoverage);
     const result = await geminiJson<{ refinements: AiRefinement[] }>(
       prompt,
@@ -448,6 +712,7 @@ router.post('/ai/refinements', requireAuth, aiLimiter, async (req, res, next) =>
     if (!result) {
       return res.json({ success: true, data: { enabled: false, refinements: [] } });
     }
+    if (!result.cached) noteAiCallUsed(req.auth!.sub);
 
     const aiRefinements = (result.data.refinements ?? []).slice(0, 6);
 
@@ -513,6 +778,11 @@ router.post('/ai/rewrite-bullet', requireAuth, aiLimiter, async (req, res, next)
   try {
     const parsed = rewriteBodySchema.parse(req.body);
 
+    const quota = await checkAiQuota(req.auth!.sub);
+    if (!quota.allowed) {
+      return res.json({ success: true, data: { enabled: false, reason: 'rate_limited' } });
+    }
+
     const prompt = [
       'You are a CV editor for Ghanaian alumni applying to professional roles.',
       'Rewrite the following experience bullet into THREE distinct variants tailored to the JD below.',
@@ -538,6 +808,7 @@ router.post('/ai/rewrite-bullet', requireAuth, aiLimiter, async (req, res, next)
     if (!result) {
       return res.json({ success: true, data: { enabled: false } });
     }
+    if (!result.cached) noteAiCallUsed(req.auth!.sub);
 
     await logAiAudit(req.auth!.sub, 'rewrite_bullet', result.tokensUsed, result.cached);
     await logAiActivity(req.auth!.sub, 'ai_rewrite', result.cached, {
@@ -609,6 +880,11 @@ router.post('/ai/summary', requireAuth, aiLimiter, async (req, res, next) => {
       return badRequest(res, 'Both CV and JD text are required to generate a tailored summary.');
     }
 
+    const quota = await checkAiQuota(req.auth!.sub);
+    if (!quota.allowed) {
+      return res.json({ success: true, data: { enabled: false, reason: 'rate_limited' } });
+    }
+
     const toneGuidance: Record<typeof tone, string> = {
       confident: 'Use a confident, achievement-led voice that leads with results.',
       warm: 'Use a warm, collaborative voice that highlights teamwork and impact.',
@@ -636,6 +912,7 @@ router.post('/ai/summary', requireAuth, aiLimiter, async (req, res, next) => {
     if (!result) {
       return res.json({ success: true, data: { enabled: false } });
     }
+    if (!result.cached) noteAiCallUsed(req.auth!.sub);
 
     const summary = (result.data.summary ?? '').trim();
 

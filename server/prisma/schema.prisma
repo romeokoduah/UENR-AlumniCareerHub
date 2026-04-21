@@ -198,6 +198,14 @@ model Application {
   customAnswers            Json?
   recruiterScore           Float?
   recruiterScoreBreakdown  Json?
+  // v3: AI-driven scoring snapshot computed once at apply-time so
+  // recruiter views are token-free. Falls back to the deterministic
+  // recruiterScore when AI is rate-limited or off.
+  aiScore                  Int?
+  aiBreakdown              Json?
+  aiReasoning              String?
+  aiStrengths              String[]          @default([])
+  aiConcerns               String[]          @default([])
   appliedAt                DateTime          @default(now())
   updatedAt                DateTime          @updatedAt
 
@@ -1199,6 +1207,15 @@ model CvMatchRun {
   aiSummary       String?
   aiBullets       Json?
   aiCostTokens    Int?
+  // v3: AI is the primary engine. Snapshots so cached views render
+  // without re-spending tokens.
+  aiScore         Int?
+  aiBreakdown     Json?     // { hardSkills, softSignals, experience, education, cultureFit, growthSignal } — each 0..1
+  aiReasoning     String?
+  aiSoftSignals   String[]  @default([])
+  aiIndustry      String?
+  aiSeniority     String?
+  aiRefinements   Json?     // [{ kind, severity, message, reasoning, skill? }]
   createdAt       DateTime @default(now())
 
   @@index([userId, createdAt(sort: Desc)])

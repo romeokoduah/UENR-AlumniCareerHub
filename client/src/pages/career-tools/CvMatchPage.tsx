@@ -1,17 +1,23 @@
 // CV Match — drop a CV + a JD, get a deterministic match score plus a
-// refinement checklist. v2 layers optional AI affordances (Google Gemini,
-// server-side) gated by GET /api/cv-match/ai/status.
+// refinement checklist. v3 promotes AI to the PRIMARY view: when the
+// backend returns `result.ai`, the AI score, breakdown, summary and
+// refinements replace the deterministic ones. When AI is rate-limited,
+// disabled or fails (`result.aiSkipped`), we fall back to the v1/v2
+// deterministic surfaces with an explanatory banner. AI affordances are
+// gated by GET /api/cv-match/ai/status only for the bullet rewriter and
+// the regenerate-summary action.
 //
 // Layout:
 //   [Header + History link]
 //   [Panel 1: Your CV] | [Panel 2: Target job]   (lg: two-column)
 //                [Run match button — sticky]
 //   [Panel 3: Results] (full width, renders below after analyse)
-//     · Score + breakdown
-//     · AiTailoredSummary  (v2, gated)
-//     · Refinement checklist (with inline BulletRewriter on certain kinds, v2)
-//       └─ AiRefinementsPanel (v2, gated)
-//     · Missing skills / weak coverage / keyword density
+//     · AI banner (only when result.ai is absent + aiSkipped is set)
+//     · Score + breakdown        ← AI variant when result.ai present
+//     · AI reasoning + chips     ← only when result.ai present
+//     · AiTailoredSummary        ← auto-renders result.ai.summary
+//     · Refinement checklist     ← uses result.ai.refinements when present
+//     · Missing skills / weak coverage / keyword density (deterministic)
 //     · Action row + privacy notice (v2, gated)
 //   [History drawer — slide-in, opens from header]
 
@@ -24,7 +30,7 @@ import {
   ArrowLeft, Target, Save, RotateCcw, FileText, Briefcase,
   Sparkles, History, X, Trash2, ChevronRight, ExternalLink,
   CheckCircle2, AlertCircle, Upload, Loader2, Copy, Wand2,
-  ChevronDown
+  ChevronDown, Info
 } from 'lucide-react';
 import { api } from '../../services/api';
 
@@ -66,6 +72,37 @@ type Refinement = {
   detail?: string;
 };
 
+type AiBreakdown = {
+  hardSkills: number;
+  softSignals: number;
+  experience: number;
+  education: number;
+  cultureFit: number;
+  growthSignal: number;
+};
+
+type AiRefinementV3 = {
+  kind: string;
+  severity: 'high' | 'medium' | 'low';
+  message: string;
+  reasoning?: string;
+  skill?: string;
+};
+
+type AiResult = {
+  score: number;
+  breakdown: AiBreakdown;
+  reasoning: string;
+  softSignals: string[];
+  industry: string | null;
+  seniority: string | null;
+  refinements: AiRefinementV3[];
+  summary: string;
+  tokensUsed: number;
+};
+
+type AiSkipReason = 'rate_limited' | 'disabled' | 'failed';
+
 type MatchResult = {
   score: number;
   breakdown: {
@@ -84,6 +121,8 @@ type MatchResult = {
     required: string[]; preferred: string[];
     yearsRequired?: number; seniority?: string; jobTitle?: string;
   };
+  ai?: AiResult;
+  aiSkipped?: { reason: AiSkipReason };
 };
 
 type MatchInput = {
@@ -160,6 +199,21 @@ const BREAKDOWN_META: Array<{
   { key: 'experience', label: 'Experience match',      weight: 15 },
   { key: 'education',  label: 'Education match',       weight: 10 },
   { key: 'location',   label: 'Location match',        weight: 5 }
+];
+
+// v3: AI breakdown meta. Weights are spec-illustrative — labelled simply
+// as "weight relative to overall" so we don't enforce them in the UI.
+const AI_BREAKDOWN_META: Array<{
+  key: keyof AiBreakdown;
+  label: string;
+  weight: number;
+}> = [
+  { key: 'hardSkills',   label: 'Hard skills',   weight: 25 },
+  { key: 'softSignals',  label: 'Soft signals',  weight: 15 },
+  { key: 'experience',   label: 'Experience',    weight: 20 },
+  { key: 'education',    label: 'Education',     weight: 10 },
+  { key: 'cultureFit',   label: 'Culture fit',   weight: 15 },
+  { key: 'growthSignal', label: 'Growth signal', weight: 15 }
 ];
 
 const SEVERITY_META: Record<Refinement['severity'], { label: string; dot: string; chip: string }> = {
@@ -539,8 +593,8 @@ function Header({ onOpenHistory }: { onOpenHistory: () => void }) {
                 Score your CV against any job in seconds.
               </h1>
               <p className="mt-1 text-sm text-[var(--muted)]">
-                Drop in a CV and a job description. Get a deterministic match score
-                plus a refinement checklist — no AI guesswork.
+                Drop in a CV and a job description. Get an AI-backed match score
+                with reasoning — or a deterministic baseline when AI is offline.
               </p>
             </div>
           </div>
@@ -856,23 +910,33 @@ function Results({
   cvText: string;
   jdText: string;
 }) {
-  const tone = scoreTone(result.score);
+  // v3: pick the score view. AI is primary when present.
+  const ai = result.ai;
+  const headlineScore = ai ? ai.score : result.score;
+  const tone = scoreTone(headlineScore);
 
-  // Refinements grouped by severity, capped at 12 total.
-  const refinements = (result.refinements ?? []).slice(0, 12);
+  // Build the refinement list. v3: when AI ran, AI refinements ARE the
+  // list — no toggle. Otherwise fall back to deterministic refinements.
+  type AnyRef = (Refinement & { reasoning?: string }) | AiRefinementV3;
+  const refinements: AnyRef[] = ai
+    ? (ai.refinements ?? []).slice(0, 12)
+    : (result.refinements ?? []).slice(0, 12);
+
   const grouped = useMemo(() => {
-    const g: Record<Refinement['severity'], Array<{ ref: Refinement; idx: number }>> = {
+    const g: Record<'high' | 'medium' | 'low', Array<{ ref: AnyRef; idx: number }>> = {
       high: [], medium: [], low: []
     };
-    refinements.forEach((r, idx) => g[r.severity].push({ ref: r, idx }));
+    refinements.forEach((r, idx) => {
+      const sev = (['high', 'medium', 'low'] as const).includes(r.severity as any)
+        ? (r.severity as 'high' | 'medium' | 'low')
+        : 'medium';
+      g[sev].push({ ref: r, idx });
+    });
     return g;
   }, [refinements]);
 
   const toggleDone = (idx: number) =>
     setDoneItems({ ...doneItems, [idx]: !doneItems[idx] });
-
-  // Sort breakdown by weight desc (already in BREAKDOWN_META order).
-  const breakdown = BREAKDOWN_META;
 
   // Top 10 keyword density, sorted by jdCount desc.
   const density = useMemo(
@@ -880,75 +944,146 @@ function Results({
     [result.keywordDensity]
   );
 
+  // Suggestions for the bullet rewriter — derived from deterministic gaps,
+  // even when AI is the primary view (deterministic baseline always present).
+  const emphasizeSuggestions = Array.from(new Set([
+    ...(result.missingSkills ?? []),
+    ...(result.weakCoverage ?? [])
+  ]));
+
   return (
     <div className="space-y-6">
+      {/* AI-skipped banner (only when AI is absent) */}
+      {!ai && result.aiSkipped && <AiSkippedBanner reason={result.aiSkipped.reason} />}
+
       {/* Headline score */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
         <div className="flex flex-wrap items-center gap-6">
-          <ScoreRing value={result.score} color={tone.ring} />
+          <ScoreRing value={headlineScore} color={tone.ring} />
           <div className="flex-1 min-w-[200px]">
-            <div className="text-xs font-bold uppercase tracking-[0.2em] text-[var(--muted)]">
-              Match score
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="text-xs font-bold uppercase tracking-[0.2em] text-[var(--muted)]">
+                {ai ? 'AI score' : 'Match score'}
+              </div>
+              {ai && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-[#F59E0B]/40 bg-[#F59E0B]/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#F59E0B]">
+                  <Sparkles size={10} /> backed by Gemini
+                </span>
+              )}
             </div>
             <div className={`mt-1 font-heading text-5xl font-extrabold ${tone.text}`}>
-              {result.score}%
+              {headlineScore}%
             </div>
             <div className={`mt-1 text-sm font-semibold ${tone.text}`}>{tone.label}</div>
             {result.derivedFromJd?.jobTitle && (
               <div className="mt-1 text-xs text-[var(--muted)]">
                 Against: <span className="font-semibold text-[var(--fg)]">{result.derivedFromJd.jobTitle}</span>
-                {result.derivedFromJd.seniority && (
-                  <> · {result.derivedFromJd.seniority}</>
+                {(ai?.seniority || result.derivedFromJd.seniority) && (
+                  <> · {ai?.seniority || result.derivedFromJd.seniority}</>
                 )}
+              </div>
+            )}
+            {ai && (
+              <div className="mt-1 text-[11px] text-[var(--muted)]">
+                Deterministic baseline: <span className="font-semibold text-[var(--fg)]">{result.score}%</span>
               </div>
             )}
           </div>
         </div>
 
-        {/* Breakdown bars */}
+        {/* Breakdown bars — AI 6-bar variant when available, else 5-bar */}
         <div className="mt-6 space-y-3">
-          {breakdown.map((b) => {
-            const raw = result.breakdown?.[b.key] ?? 0;
-            const pct = Math.round(Math.max(0, Math.min(1, raw)) * 100);
-            return (
-              <div key={b.key}>
-                <div className="mb-1 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-[var(--fg)]">{b.label}</span>
-                    <span className="rounded-full bg-[var(--bg)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">
-                      Weight {b.weight}%
-                    </span>
+          {ai
+            ? AI_BREAKDOWN_META.map((b) => {
+                const raw = ai.breakdown?.[b.key] ?? 0;
+                const pct = Math.round(Math.max(0, Math.min(1, raw)) * 100);
+                return (
+                  <div key={b.key}>
+                    <div className="mb-1 flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-[var(--fg)]">{b.label}</span>
+                        <span
+                          className="rounded-full bg-[var(--bg)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]"
+                          title="Weight relative to overall"
+                        >
+                          {b.weight}% weight
+                        </span>
+                      </div>
+                      <span className="font-semibold text-[var(--muted)]">{pct}%</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-[var(--bg)]">
+                      <motion.div
+                        className="h-full bg-gradient-to-r from-[#065F46] to-[#84CC16]"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${pct}%` }}
+                        transition={{ duration: 0.5 }}
+                      />
+                    </div>
                   </div>
-                  <span className="font-semibold text-[var(--muted)]">{pct}%</span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-[var(--bg)]">
-                  <motion.div
-                    className="h-full bg-[#065F46] dark:bg-[#84CC16]"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${pct}%` }}
-                    transition={{ duration: 0.5 }}
-                  />
-                </div>
-              </div>
-            );
-          })}
+                );
+              })
+            : BREAKDOWN_META.map((b) => {
+                const raw = result.breakdown?.[b.key] ?? 0;
+                const pct = Math.round(Math.max(0, Math.min(1, raw)) * 100);
+                return (
+                  <div key={b.key}>
+                    <div className="mb-1 flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-[var(--fg)]">{b.label}</span>
+                        <span className="rounded-full bg-[var(--bg)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">
+                          Weight {b.weight}%
+                        </span>
+                      </div>
+                      <span className="font-semibold text-[var(--muted)]">{pct}%</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-[var(--bg)]">
+                      <motion.div
+                        className="h-full bg-[#065F46] dark:bg-[#84CC16]"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${pct}%` }}
+                        transition={{ duration: 0.5 }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
         </div>
+
+        {/* AI reasoning + chips (industry / seniority / soft signals) */}
+        {ai && (ai.reasoning || ai.industry || ai.seniority || (ai.softSignals?.length ?? 0) > 0) && (
+          <AiReasoningBlock ai={ai} />
+        )}
       </div>
 
-      {/* AI tailored intro (v2) */}
-      {aiEnabled && (
+      {/* AI summary card (v3: auto-renders ai.summary when present;
+          v2 fallback Generate flow when AI feature is enabled but summary missing) */}
+      {ai?.summary ? (
         <AiTailoredSummary
           runId={runId}
           cvText={cvText}
           jdText={jdText}
+          initialSummary={ai.summary}
         />
+      ) : (
+        aiEnabled && (
+          <AiTailoredSummary
+            runId={runId}
+            cvText={cvText}
+            jdText={jdText}
+          />
+        )
       )}
 
-      {/* Refinement checklist */}
+      {/* Refinement checklist (v3: AI refinements when present) */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
-        <div className="mb-4 flex items-center gap-2">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
           <Sparkles size={18} className="text-[#F59E0B]" />
           <h3 className="font-heading text-lg font-bold">Refinement checklist</h3>
+          {ai && (
+            <span className="rounded-full border border-[#F59E0B]/40 bg-[#F59E0B]/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#F59E0B]">
+              AI-generated
+            </span>
+          )}
         </div>
         {refinements.length === 0 ? (
           <p className="text-sm text-[var(--muted)]">
@@ -970,17 +1105,15 @@ function Results({
                     {items.map(({ ref, idx }) => (
                       <RefinementItem
                         key={idx}
-                        ref_={ref}
+                        ref_={ref as Refinement & { reasoning?: string }}
                         idx={idx}
                         meta={meta}
                         done={!!doneItems[idx]}
                         onToggleDone={() => toggleDone(idx)}
                         aiEnabled={aiEnabled}
                         jdText={jdText}
-                        emphasizeSuggestions={Array.from(new Set([
-                          ...(result.missingSkills ?? []),
-                          ...(result.weakCoverage ?? [])
-                        ]))}
+                        emphasizeSuggestions={emphasizeSuggestions}
+                        sourceIsAi={!!ai}
                       />
                     ))}
                   </ul>
@@ -992,17 +1125,6 @@ function Results({
         <p className="mt-4 text-xs text-[var(--muted)]">
           Toggling "Mark done" is local-only — useful for tracking progress as you edit your CV.
         </p>
-
-        {/* AI refinements panel (v2) */}
-        {aiEnabled && (
-          <AiRefinementsPanel
-            runId={runId}
-            cvText={cvText}
-            jdText={jdText}
-            missingSkills={result.missingSkills ?? []}
-            weakCoverage={result.weakCoverage ?? []}
-          />
-        )}
       </div>
 
       {/* Missing skills + Weak coverage */}
@@ -1194,13 +1316,93 @@ function ScoreRing({ value, color }: { value: number; color: string }) {
   );
 }
 
+// =================== v3: AI-skipped banner ================================
+
+function AiSkippedBanner({ reason }: { reason: AiSkipReason }) {
+  // Three states; rate_limited / failed are amber, disabled is grey.
+  let tone: 'amber' | 'grey' = 'amber';
+  let message = '';
+  if (reason === 'rate_limited') {
+    message = "You've used your daily AI quota (30 runs/day). Showing the deterministic analysis below — full AI back tomorrow.";
+  } else if (reason === 'disabled') {
+    tone = 'grey';
+    message = 'AI features are turned off for this site. Showing deterministic analysis.';
+  } else {
+    message = "AI couldn't run this time. Showing deterministic analysis below — try Run match again in a moment for AI.";
+  }
+
+  const cls = tone === 'amber'
+    ? 'border-[#F59E0B]/40 bg-[#F59E0B]/10 text-[var(--fg)]'
+    : 'border-[var(--border)] bg-[var(--bg)]/60 text-[var(--fg)]';
+  const iconCls = tone === 'amber' ? 'text-[#F59E0B]' : 'text-[var(--muted)]';
+
+  return (
+    <div className={`flex items-start gap-3 rounded-2xl border p-3 text-sm ${cls}`}>
+      <Info size={16} className={`mt-0.5 flex-shrink-0 ${iconCls}`} />
+      <p className="leading-relaxed">{message}</p>
+    </div>
+  );
+}
+
+// =================== v3: AI reasoning block + chips =======================
+
+function AiReasoningBlock({ ai }: { ai: AiResult }) {
+  const [open, setOpen] = useState(true);
+  const hasChips = !!ai.industry || !!ai.seniority || (ai.softSignals?.length ?? 0) > 0;
+
+  return (
+    <div className="mt-5 border-t border-dashed border-[var(--border)] pt-4">
+      {hasChips && (
+        <div className="mb-3 flex flex-wrap items-center gap-1.5">
+          {ai.industry && (
+            <span className="rounded-full border border-[#065F46]/30 bg-[#065F46]/10 px-2.5 py-0.5 text-[11px] font-semibold text-[#065F46] dark:bg-[#84CC16]/15 dark:text-[#84CC16]">
+              {ai.industry}
+            </span>
+          )}
+          {ai.seniority && (
+            <span className="rounded-full border border-[var(--border)] bg-[var(--bg)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--fg)]">
+              {ai.seniority}
+            </span>
+          )}
+          {(ai.softSignals ?? []).slice(0, 8).map((s) => (
+            <span
+              key={s}
+              className="rounded-full border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-2.5 py-0.5 text-[11px] font-semibold text-[#F59E0B]"
+            >
+              {s}
+            </span>
+          ))}
+        </div>
+      )}
+      {ai.reasoning && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="mb-2 inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[var(--muted)] hover:text-[var(--fg)]"
+            aria-expanded={open}
+          >
+            <ChevronDown size={12} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+            AI's reasoning
+          </button>
+          {open && (
+            <blockquote className="rounded-xl border-l-4 border-[#F59E0B] bg-[#F59E0B]/5 px-4 py-3 text-sm italic leading-relaxed text-[var(--fg)] whitespace-pre-wrap">
+              {ai.reasoning}
+            </blockquote>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // =================== AI: Refinement item with composer ====================
 
 function RefinementItem({
   ref_, idx, meta, done, onToggleDone,
-  aiEnabled, jdText, emphasizeSuggestions
+  aiEnabled, jdText, emphasizeSuggestions, sourceIsAi
 }: {
-  ref_: Refinement;
+  ref_: Refinement & { reasoning?: string };
   idx: number;
   meta: { label: string; dot: string; chip: string };
   done: boolean;
@@ -1208,9 +1410,21 @@ function RefinementItem({
   aiEnabled: boolean;
   jdText: string;
   emphasizeSuggestions: string[];
+  sourceIsAi?: boolean;
 }) {
-  const showRewriter = aiEnabled && AI_REWRITE_KINDS.has(ref_.kind);
+  // The bullet rewriter is genuinely useful regardless of where the
+  // refinement came from. v3: show it on AI refinements too, but still
+  // gate by AI being enabled and the kind being a rewriting one. AI
+  // refinements may use kinds outside our set — be permissive when
+  // sourceIsAi so the rewriter can still surface where it helps.
+  const showRewriter = aiEnabled && (
+    sourceIsAi
+      ? true
+      : AI_REWRITE_KINDS.has(ref_.kind as RefinementKind)
+  );
   const [composerOpen, setComposerOpen] = useState(false);
+  const [reasoningOpen, setReasoningOpen] = useState(false);
+  const reasoning = (ref_ as { reasoning?: string }).reasoning;
 
   return (
     <li
@@ -1229,12 +1443,36 @@ function RefinementItem({
                 {ref_.skill}
               </span>
             )}
+            {sourceIsAi && (
+              <Sparkles size={12} className="text-[#F59E0B]" />
+            )}
             <span className={`text-sm ${done ? 'line-through text-[var(--muted)]' : 'text-[var(--fg)]'}`}>
               {ref_.message}
             </span>
           </div>
           {ref_.detail && (
             <p className="mt-1 text-xs text-[var(--muted)]">{ref_.detail}</p>
+          )}
+          {reasoning && (
+            <>
+              <button
+                type="button"
+                onClick={() => setReasoningOpen((v) => !v)}
+                className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--muted)] hover:text-[var(--fg)]"
+                aria-expanded={reasoningOpen}
+              >
+                <ChevronDown
+                  size={12}
+                  className={`transition-transform ${reasoningOpen ? 'rotate-180' : ''}`}
+                />
+                {reasoningOpen ? 'Hide reasoning' : 'Reasoning'}
+              </button>
+              {reasoningOpen && (
+                <p className="mt-1 rounded-lg bg-[var(--bg)]/70 px-2 py-1.5 text-xs italic text-[var(--muted)] whitespace-pre-wrap">
+                  {reasoning}
+                </p>
+              )}
+            </>
           )}
           {showRewriter && (
             <button
@@ -1428,14 +1666,15 @@ function BulletRewriter({
 // =================== AI: Tailored summary card ============================
 
 function AiTailoredSummary({
-  runId, cvText, jdText
+  runId, cvText, jdText, initialSummary
 }: {
   runId: string | null;
   cvText: string;
   jdText: string;
+  initialSummary?: string;
 }) {
   const [tone, setTone] = useState<AiSummaryTone>('Confident');
-  const [summary, setSummary] = useState<string>('');
+  const [summary, setSummary] = useState<string>(initialSummary ?? '');
   const [hidden, setHidden] = useState(false);
 
   const summaryMut = useMutation({

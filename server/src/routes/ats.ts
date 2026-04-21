@@ -35,6 +35,9 @@ import { ApplicationStatus, NotificationType } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { scoreApplication } from '../lib/atsScoring.js';
+import { aiScoreApplication, type AiAtsCandidateContext } from '../lib/aiAtsScoring.js';
+import { checkAiQuota, noteAiCallUsed } from '../lib/aiQuota.js';
+import { logAudit } from '../lib/audit.js';
 
 const router = Router();
 
@@ -609,6 +612,197 @@ router.post('/applications/:id/recompute', requireAuth, requireEmployer, async (
     const result = await recomputeApplicationScore(app.id);
     if (!result) return notFound(res, 'Application not found');
     res.json({ success: true, data: result });
+  } catch (e) { next(e); }
+});
+
+// ---- AI recompute (v2) ---------------------------------------------------
+//
+// Manual recompute of the AI snapshot stored on Application.aiScore /
+// aiBreakdown / aiReasoning / aiStrengths / aiConcerns. Same inputs the
+// apply-time path uses (latest CV + opportunity + applicant context),
+// but billed against the EMPLOYER's daily quota — not the candidate's
+// — so one applicant can't burn an org's quota by repeatedly applying.
+//
+// Response shape:
+//   { success: true, data: { score, breakdown, strengths, concerns, reasoning } }
+//   { success: true, data: { enabled: false, reason } }   (quota / disabled / no CV)
+//
+// AI failures are reported as { enabled: false } rather than 500s — the
+// recruiter just keeps using whatever was previously stored (or the
+// deterministic score).
+router.post('/applications/:id/ai-recompute', requireAuth, requireEmployer, async (req, res, next) => {
+  try {
+    const userId = req.auth!.sub;
+    const { app, allowed } = await loadApplicationOwnedByEmployer(req.params.id, userId);
+    if (!app) return notFound(res, 'Application not found');
+    if (!allowed) return forbid(res, 'You do not own this job');
+
+    const quota = await checkAiQuota(userId);
+    if (!quota.allowed) {
+      return res.json({
+        success: true,
+        data: { enabled: false, reason: 'quota_exhausted', quota }
+      });
+    }
+
+    const [opportunity, applicant, latestCv] = await Promise.all([
+      prisma.opportunity.findUnique({
+        where: { id: app.opportunityId },
+        select: {
+          id: true, title: true, description: true,
+          requiredSkills: true, preferredSkills: true,
+          location: true, locationType: true
+        }
+      }),
+      prisma.user.findUnique({
+        where: { id: app.userId },
+        select: {
+          skills: true, bio: true,
+          programme: true, graduationYear: true,
+          currentRole: true, currentCompany: true, location: true
+        }
+      }),
+      prisma.cV.findFirst({
+        where: { userId: app.userId },
+        orderBy: { updatedAt: 'desc' },
+        select: { data: true }
+      })
+    ]);
+
+    if (!opportunity || !applicant) {
+      return res.json({ success: true, data: { enabled: false, reason: 'missing_inputs' } });
+    }
+
+    // Inline CV-text builder — kept here (not factored out) so this
+    // route file doesn't have to import private helpers from
+    // routes/opportunities.ts. Mirrors the apply-time builder.
+    const cvData = (latestCv?.data ?? null) as {
+      summary?: string;
+      experience?: Array<{ company?: string; role?: string; start?: string; end?: string; current?: boolean; bullets?: string[] }>;
+      education?: Array<{ school?: string; degree?: string; field?: string; start?: string; end?: string }>;
+      skills?: string[];
+      projects?: Array<{ name?: string; description?: string }>;
+      certifications?: Array<{ name?: string; issuer?: string }>;
+    } | null;
+
+    const parts: string[] = [];
+    if (cvData?.summary?.trim()) parts.push('SUMMARY:', cvData.summary.trim());
+    else if (applicant.bio?.trim()) parts.push('SUMMARY:', applicant.bio.trim());
+
+    if (cvData?.experience?.length) {
+      parts.push('', 'EXPERIENCE:');
+      for (const exp of cvData.experience) {
+        const header = [exp.role, exp.company].filter(Boolean).join(' @ ');
+        const range = [exp.start, exp.current ? 'present' : exp.end].filter(Boolean).join(' - ');
+        const line = [header, range].filter(Boolean).join(' (') + (range ? ')' : '');
+        if (line.trim()) parts.push(`- ${line}`);
+        for (const bullet of exp.bullets ?? []) {
+          if (bullet?.trim()) parts.push(`  • ${bullet.trim()}`);
+        }
+      }
+    }
+
+    if (cvData?.education?.length) {
+      parts.push('', 'EDUCATION:');
+      for (const edu of cvData.education) {
+        const line = [edu.degree, edu.field, edu.school].filter(Boolean).join(' — ');
+        const range = [edu.start, edu.end].filter(Boolean).join(' - ');
+        if (line || range) parts.push(`- ${[line, range].filter(Boolean).join(' (')}${range ? ')' : ''}`);
+      }
+    }
+
+    const skills = (cvData?.skills?.length ? cvData.skills : applicant.skills) ?? [];
+    if (skills.length) parts.push('', 'SKILLS:', skills.join(', '));
+
+    if (cvData?.projects?.length) {
+      parts.push('', 'PROJECTS:');
+      for (const p of cvData.projects) {
+        if (p.name) parts.push(`- ${p.name}${p.description ? `: ${p.description}` : ''}`);
+      }
+    }
+    if (cvData?.certifications?.length) {
+      parts.push('', 'CERTIFICATIONS:');
+      for (const c of cvData.certifications) {
+        const line = [c.name, c.issuer].filter(Boolean).join(' — ');
+        if (line) parts.push(`- ${line}`);
+      }
+    }
+
+    const cvTextRaw = parts.join('\n').trim();
+    const cvText = cvTextRaw.length > 12000 ? `${cvTextRaw.slice(0, 12000)}\n…[truncated]` : cvTextRaw;
+
+    if (!cvText) {
+      return res.json({ success: true, data: { enabled: false, reason: 'no_cv' } });
+    }
+
+    const jdText = [
+      opportunity.description,
+      opportunity.requiredSkills?.length ? `Required skills: ${opportunity.requiredSkills.join(', ')}` : '',
+      opportunity.preferredSkills?.length ? `Preferred skills: ${opportunity.preferredSkills.join(', ')}` : '',
+      opportunity.location ? `Location: ${opportunity.location}${opportunity.locationType ? ` (${opportunity.locationType})` : ''}` : ''
+    ].filter(Boolean).join('\n\n');
+
+    const ctx: AiAtsCandidateContext = {
+      programme: applicant.programme ?? undefined,
+      graduationYear: applicant.graduationYear ?? undefined,
+      currentRole: applicant.currentRole ?? undefined,
+      currentCompany: applicant.currentCompany ?? undefined,
+      location: applicant.location ?? undefined
+    };
+
+    const aiResult = await aiScoreApplication(cvText, jdText, app.opportunity.title, ctx);
+    if (!aiResult) {
+      return res.json({ success: true, data: { enabled: false, reason: 'ai_unavailable' } });
+    }
+
+    await prisma.application.update({
+      where: { id: app.id },
+      data: {
+        aiScore: aiResult.data.score,
+        aiBreakdown: aiResult.data.breakdown as any,
+        aiReasoning: aiResult.data.reasoning,
+        aiStrengths: aiResult.data.strengths,
+        aiConcerns: aiResult.data.concerns
+      }
+    });
+
+    if (!aiResult.cached) noteAiCallUsed(userId);
+    await logAudit({
+      actorId: userId,
+      action: 'ats.ai_call',
+      targetType: 'Application',
+      targetId: app.id,
+      metadata: {
+        applicationId: app.id,
+        tokens: aiResult.tokensUsed,
+        cached: aiResult.cached,
+        manual: true
+      }
+    });
+
+    await prisma.careerToolsActivity.create({
+      data: {
+        userId,
+        tool: 'ats',
+        action: 'ai_recompute',
+        metadata: {
+          applicationId: app.id,
+          score: aiResult.data.score,
+          cached: aiResult.cached
+        }
+      }
+    }).catch(() => undefined);
+
+    res.json({
+      success: true,
+      data: {
+        score: aiResult.data.score,
+        breakdown: aiResult.data.breakdown,
+        strengths: aiResult.data.strengths,
+        concerns: aiResult.data.concerns,
+        reasoning: aiResult.data.reasoning
+      }
+    });
   } catch (e) { next(e); }
 });
 

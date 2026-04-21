@@ -86,6 +86,19 @@ type ScoreBreakdown = {
   weights: Record<string, number>;
 };
 
+// v2 ATS AI fields. Populated apply-time and on demand via
+// /api/ats/applications/:id/ai-recompute. When `aiScore` is present,
+// the UI shows it as the primary score; otherwise falls back to the
+// deterministic `recruiterScore`.
+type AiScoreBreakdown = {
+  hardSkills: number;
+  softSignals: number;
+  experience: number;
+  education: number;
+  cultureFit: number;
+  growthSignal: number;
+};
+
 type AppRow = {
   id: string;
   status: Stage;
@@ -95,10 +108,20 @@ type AppRow = {
   coverLetter: string | null;
   recruiterScore: number | null;
   recruiterScoreBreakdown: ScoreBreakdown | null;
+  aiScore?: number | null;
+  aiBreakdown?: AiScoreBreakdown | null;
+  aiReasoning?: string | null;
+  aiStrengths?: string[];
+  aiConcerns?: string[];
   notesCount: number;
   customAnswers: Record<string, string> | null;
   user: ApplicantUser;
 };
+
+// Helper: prefer AI score when present, fall back to deterministic.
+function effectiveScore(app: { aiScore?: number | null; recruiterScore: number | null }): number | null {
+  return app.aiScore ?? app.recruiterScore;
+}
 
 type CandidateNote = {
   id: string;
@@ -126,6 +149,11 @@ type AppDetail = {
     customAnswers: Record<string, string> | null;
     recruiterScore: number | null;
     recruiterScoreBreakdown: ScoreBreakdown | null;
+    aiScore?: number | null;
+    aiBreakdown?: AiScoreBreakdown | null;
+    aiReasoning?: string | null;
+    aiStrengths?: string[];
+    aiConcerns?: string[];
     user: ApplicantUser;
   };
   opportunity: {
@@ -197,7 +225,7 @@ export default function AtsJobBoardPage() {
         const has = a.user.skills?.some((s) => s.toLowerCase().includes(skill));
         if (!has) return false;
       }
-      if (minScore > 0 && (a.recruiterScore ?? 0) < minScore) return false;
+      if (minScore > 0 && (effectiveScore(a) ?? 0) < minScore) return false;
       return true;
     });
   }, [apps, search, skillFilter, minScore]);
@@ -465,8 +493,9 @@ function KanbanCard({
       >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1 text-sm font-bold leading-tight">{display}</div>
-          <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${scoreColor(app.recruiterScore)}`}>
-            {app.recruiterScore ?? '—'}
+          <span className={`shrink-0 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${scoreColor(effectiveScore(app))}`} title={app.aiScore != null ? 'AI score (Gemini)' : 'Deterministic score'}>
+            {app.aiScore != null && <span className="text-[#F59E0B]">✨</span>}
+            {effectiveScore(app) ?? '—'}
           </span>
         </div>
         {!anonName && app.user.programme && (
@@ -523,7 +552,7 @@ function TableView({
       let av: any; let bv: any;
       switch (sortKey) {
         case 'name': av = `${a.user.firstName} ${a.user.lastName}`; bv = `${b.user.firstName} ${b.user.lastName}`; break;
-        case 'score': av = a.recruiterScore ?? -1; bv = b.recruiterScore ?? -1; break;
+        case 'score': av = effectiveScore(a) ?? -1; bv = effectiveScore(b) ?? -1; break;
         case 'stage': av = STAGES.indexOf(a.status); bv = STAGES.indexOf(b.status); break;
         case 'applied': av = new Date(a.appliedAt).getTime(); bv = new Date(b.appliedAt).getTime(); break;
         case 'notes': av = a.notesCount; bv = b.notesCount; break;
@@ -584,7 +613,7 @@ function TableView({
                 </button>
                 {!anonymized && a.user.programme && <div className="text-[11px] text-[var(--muted)]">{a.user.programme}</div>}
               </td>
-              <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${scoreColor(a.recruiterScore)}`}>{a.recruiterScore ?? '—'}</span></td>
+              <td className="px-3 py-2"><span className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ${scoreColor(effectiveScore(a))}`} title={a.aiScore != null ? 'AI score (Gemini)' : 'Deterministic score'}>{a.aiScore != null && <span className="text-[#F59E0B]">✨</span>}{effectiveScore(a) ?? '—'}</span></td>
               <td className="px-3 py-2"><span className="rounded-full bg-[var(--bg)] border border-[var(--border)] px-2 py-0.5 text-[11px] font-semibold">{STAGE_LABEL[a.status]}</span></td>
               <td className="px-3 py-2 text-xs text-[var(--muted)]">{relativeTime(a.appliedAt)}</td>
               <td className="px-3 py-2">{a.cvUrl ? <a href={a.cvUrl} target="_blank" rel="noreferrer" className="text-[#065F46] dark:text-[#84CC16]"><FileText size={14} /></a> : <span className="text-[var(--muted)]">—</span>}</td>
@@ -734,8 +763,9 @@ function DrawerBody({
               <div className="mt-0.5 text-xs text-[var(--fg)]/80"><Briefcase size={11} className="inline mr-1" /> {app.user.currentRole}{app.user.currentCompany ? ` @ ${app.user.currentCompany}` : ''}</div>
             )}
           </div>
-          <span className={`rounded-full px-3 py-1 text-sm font-bold ${scoreColor(app.recruiterScore)}`}>
-            {app.recruiterScore ?? '—'}<span className="text-[10px] font-normal"> /100</span>
+          <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-sm font-bold ${scoreColor(effectiveScore(app))}`} title={app.aiScore != null ? 'AI score (Gemini)' : 'Deterministic score'}>
+            {app.aiScore != null && <span className="text-[#F59E0B]">✨</span>}
+            {effectiveScore(app) ?? '—'}<span className="text-[10px] font-normal"> /100</span>
           </span>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
@@ -743,6 +773,42 @@ function DrawerBody({
           <span className="text-[var(--muted)]">applied {relativeTime(app.appliedAt)}</span>
         </div>
       </section>
+
+      {/* AI's take — strengths + concerns + reasoning, when present */}
+      {(app.aiStrengths?.length || app.aiConcerns?.length || app.aiReasoning) && (
+        <section className="rounded-2xl border border-[#F59E0B]/30 bg-[#F59E0B]/5 p-4">
+          <div className="mb-3 flex items-center gap-1.5">
+            <span className="text-[#F59E0B]">✨</span>
+            <div className="font-heading text-sm font-bold">AI's take</div>
+            <span className="rounded-full border border-[#F59E0B]/40 bg-[#F59E0B]/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#F59E0B]">Gemini</span>
+          </div>
+          {app.aiReasoning && (
+            <p className="mb-3 text-sm leading-relaxed text-[var(--fg)]/85 italic">"{app.aiReasoning}"</p>
+          )}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {app.aiStrengths && app.aiStrengths.length > 0 && (
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">Strengths</div>
+                <ul className="mt-1.5 space-y-1 text-xs text-[var(--fg)]/85">
+                  {app.aiStrengths.map((s, i) => (
+                    <li key={i} className="flex gap-1.5"><span className="text-emerald-600">+</span>{s}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {app.aiConcerns && app.aiConcerns.length > 0 && (
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-rose-600">Concerns to probe</div>
+                <ul className="mt-1.5 space-y-1 text-xs text-[var(--fg)]/85">
+                  {app.aiConcerns.map((c, i) => (
+                    <li key={i} className="flex gap-1.5"><span className="text-rose-600">!</span>{c}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* Score breakdown */}
       {breakdown && (
