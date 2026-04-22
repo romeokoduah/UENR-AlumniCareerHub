@@ -223,7 +223,17 @@ router.get('/', optionalAuth, async (req, res, next) => {
       where: {
         isActive: true,
         isApproved: true,
-        deadline: { gte: new Date() },
+        // Allow null deadlines (ingested jobs from Adzuna often don't carry
+        // an explicit deadline — the role is open until filled). Anything
+        // with an explicit past deadline still gets filtered out.
+        AND: [
+          {
+            OR: [
+              { deadline: null },
+              { deadline: { gte: new Date() } }
+            ]
+          }
+        ],
         ...(type && { type: type as any }),
         ...(locationType && { locationType: locationType as any }),
         ...(industry && { industry: { contains: industry, mode: 'insensitive' } }),
