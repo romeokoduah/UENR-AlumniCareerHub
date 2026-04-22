@@ -21,6 +21,13 @@ function buildAll(): SourceAdapter[] {
   if (process.env.INCLUDE_MOCK_ADAPTER === '1') {
     out.unshift(mockAdapter);
   }
+  // Optional allowlist: comma-separated adapter ids. Useful for tests
+  // (restrict to _mock) and for admin-triggered single-source debug runs.
+  const filter = process.env.INGEST_ADAPTER_FILTER;
+  if (filter) {
+    const allow = new Set(filter.split(',').map((s) => s.trim()).filter(Boolean));
+    return out.filter((a) => allow.has(a.id));
+  }
   return out;
 }
 

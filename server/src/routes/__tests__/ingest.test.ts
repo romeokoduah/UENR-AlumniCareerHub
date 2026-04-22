@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll } from 'bun:test';
+import { describe, it, expect, beforeEach, beforeAll, afterAll } from 'bun:test';
 import { prisma } from '../../lib/prisma.js';
 import request from 'supertest';
 import { createApp } from '../../app.js';
@@ -6,11 +6,23 @@ import { createApp } from '../../app.js';
 const ENABLED = !!process.env.DATABASE_URL;
 
 (ENABLED ? describe : describe.skip)('ingest routes', () => {
+  const prevFilter = process.env.INGEST_ADAPTER_FILTER;
+  const prevIncludeMock = process.env.INCLUDE_MOCK_ADAPTER;
   const app = createApp();
+
+  beforeAll(() => {
+    // Restrict the adapter registry to just the mock adapter so the
+    // inline drain on /scholarships/run stays offline + finishes in
+    // seconds (the real RSS adapters hit live feeds + Groq and would
+    // blow past bun:test's default 5s timeout).
+    process.env.INCLUDE_MOCK_ADAPTER = '1';
+    process.env.INGEST_ADAPTER_FILTER = '_mock';
+  });
 
   beforeEach(async () => {
     await prisma.ingestJob.deleteMany({});
     await prisma.ingestRun.deleteMany({});
+    await prisma.scholarship.deleteMany({ where: { sourceName: '_mock' } });
     await prisma.siteContent.upsert({
       where: { key: 'feature-flags' },
       create: { key: 'feature-flags', data: { 'scholarships-ingest-enabled': true } },
@@ -19,6 +31,11 @@ const ENABLED = !!process.env.DATABASE_URL;
   });
 
   afterAll(async () => {
+    if (prevFilter === undefined) delete process.env.INGEST_ADAPTER_FILTER;
+    else process.env.INGEST_ADAPTER_FILTER = prevFilter;
+    if (prevIncludeMock === undefined) delete process.env.INCLUDE_MOCK_ADAPTER;
+    else process.env.INCLUDE_MOCK_ADAPTER = prevIncludeMock;
+    await prisma.scholarship.deleteMany({ where: { sourceName: '_mock' } });
     await prisma.siteContent.upsert({
       where: { key: 'feature-flags' },
       create: { key: 'feature-flags', data: { 'scholarships-ingest-enabled': false } },
