@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, beforeAll, afterAll } from 'bun:test'
 import { prisma } from '../../lib/prisma.js';
 import request from 'supertest';
 import { createApp } from '../../app.js';
+import { signToken } from '../../lib/jwt.js';
 
 const ENABLED = !!process.env.DATABASE_URL;
 
@@ -201,6 +202,94 @@ const ENABLED = !!process.env.DATABASE_URL;
     expect(sch?.status).toBe('EXPIRED');
     const opp = await prisma.opportunity.findFirst({ where: { title: 'Expired Test Job' } });
     expect(opp?.status).toBe('EXPIRED');
+  });
+
+  // ---------------------------------------------------------------------------
+  // /admin/ingest/run-now — admin-authenticated trigger
+  // ---------------------------------------------------------------------------
+
+  it('POST /api/admin/ingest/run-now returns 401 without token', async () => {
+    const res = await request(app).post('/api/admin/ingest/run-now').send({ which: 'all' });
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /api/admin/ingest/run-now returns 403 for non-admin token', async () => {
+    const user = await prisma.user.create({
+      data: {
+        firstName: 'Regular',
+        lastName: 'User',
+        email: 'run-now-student@test.internal',
+        passwordHash: 'not-used',
+        role: 'STUDENT',
+        programme: 'N/A'
+      }
+    });
+    const studentToken = signToken({ sub: user.id, role: 'STUDENT' }, { expiresIn: '1h' });
+    await prisma.user.deleteMany({ where: { email: 'run-now-student@test.internal' } });
+
+    const res = await request(app)
+      .post('/api/admin/ingest/run-now')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({ which: 'all' });
+    expect(res.status).toBe(403);
+  });
+
+  it('POST /api/admin/ingest/run-now: both flags OFF → both branches skipped', async () => {
+    await prisma.siteContent.update({
+      where: { key: 'feature-flags' },
+      data: { data: { 'scholarships-ingest-enabled': false, 'opportunities-ingest-enabled': false } }
+    });
+
+    const admin = await prisma.user.create({
+      data: {
+        firstName: 'Run',
+        lastName: 'Admin',
+        email: 'run-now-admin@test.internal',
+        passwordHash: 'not-used',
+        role: 'ADMIN',
+        programme: 'N/A'
+      }
+    });
+    const adminToken = signToken({ sub: admin.id, role: 'ADMIN' }, { expiresIn: '1h' });
+    await prisma.user.deleteMany({ where: { email: 'run-now-admin@test.internal' } });
+
+    const res = await request(app)
+      .post('/api/admin/ingest/run-now')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ which: 'all' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.scholarships.skipped).toBe('flag-off');
+    expect(res.body.data.opportunities.skipped).toBe('flag-off');
+  });
+
+  it('POST /api/admin/ingest/run-now: which=scholarships skips opportunities branch', async () => {
+    await prisma.siteContent.update({
+      where: { key: 'feature-flags' },
+      data: { data: { 'scholarships-ingest-enabled': false, 'opportunities-ingest-enabled': false } }
+    });
+
+    const admin = await prisma.user.create({
+      data: {
+        firstName: 'Run',
+        lastName: 'Admin',
+        email: 'run-now-admin2@test.internal',
+        passwordHash: 'not-used',
+        role: 'ADMIN',
+        programme: 'N/A'
+      }
+    });
+    const adminToken = signToken({ sub: admin.id, role: 'ADMIN' }, { expiresIn: '1h' });
+    await prisma.user.deleteMany({ where: { email: 'run-now-admin2@test.internal' } });
+
+    const res = await request(app)
+      .post('/api/admin/ingest/run-now')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ which: 'scholarships' });
+
+    expect(res.status).toBe(200);
+    // opportunities branch should be "not-selected"
+    expect(res.body.data.opportunities.skipped).toBe('not-selected');
   });
 
   // ---------------------------------------------------------------------------

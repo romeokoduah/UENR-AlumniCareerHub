@@ -9,6 +9,7 @@ import {
 import { runPipelineForAdapter } from '../lib/ingest/pipeline.js';
 import { runJobsPipelineForAdapter } from '../lib/ingest/jobsPipeline.js';
 import { DRAIN_BATCH_SIZE } from '../lib/ingest/config.js';
+import { runAll } from './ingestRunAll.js';
 
 const router = Router();
 
@@ -242,50 +243,8 @@ router.post('/all/run', async (req, res, next) => {
     if (!cronAuth(req)) {
       return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'bad bearer' } });
     }
-
-    type PipelineResult = {
-      enqueued: number;
-      skipped?: string;
-      processed?: number;
-      totals?: { itemsPublished: number; itemsQueued: number; itemsRejected: number; sourcesOk: number; sourcesFailed: number };
-      error?: string;
-    };
-
-    // --- Scholarships branch ---
-    let scholarships: PipelineResult;
-    try {
-      if (!(await flagOn('scholarships-ingest-enabled'))) {
-        scholarships = { enqueued: 0, skipped: 'flag-off' };
-      } else {
-        const run = await createRun('cron');
-        const adapters = listAdapters();
-        await enqueueJobs(run.id, adapters.map((a) => a.id));
-        const drain = await drainScholarshipBatch();
-        scholarships = { enqueued: adapters.length, ...drain };
-      }
-    } catch (err) {
-      console.error('[ingest/all/run] scholarships pipeline error:', err);
-      scholarships = { enqueued: 0, error: (err as Error).message };
-    }
-
-    // --- Opportunities branch ---
-    let opportunities: PipelineResult;
-    try {
-      if (!(await flagOn('opportunities-ingest-enabled'))) {
-        opportunities = { enqueued: 0, skipped: 'flag-off' };
-      } else {
-        const run = await createRun('cron');
-        const adapters = listJobAdapters();
-        await enqueueJobs(run.id, adapters.map((a) => `${JOB_PREFIX}${a.id}`));
-        const drain = await drainBatch();
-        opportunities = { enqueued: adapters.length, ...drain };
-      }
-    } catch (err) {
-      console.error('[ingest/all/run] opportunities pipeline error:', err);
-      opportunities = { enqueued: 0, error: (err as Error).message };
-    }
-
-    return res.json({ success: true, data: { scholarships, opportunities } });
+    const data = await runAll('all', 'cron');
+    return res.json({ success: true, data });
   } catch (e) { next(e); }
 });
 
