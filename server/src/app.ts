@@ -64,6 +64,8 @@ import ingestRouter from './routes/ingest.js';
 import adminScholarshipsReviewRoutes from './routes/adminScholarshipsReview.js';
 import adminOpportunitiesReviewRoutes from './routes/adminOpportunitiesReview.js';
 import adminIngestStatsRoutes from './routes/adminIngestStats.js';
+import adminIngestAdhocRoutes from './routes/adminIngestAdhoc.js';
+import adminIngestRunNowRoutes from './routes/adminIngestRunNow.js';
 import { UPLOAD_DIR } from './lib/upload.js';
 
 export function createApp() {
@@ -130,6 +132,8 @@ export function createApp() {
   app.use('/api/admin/scholarships', adminScholarshipsReviewRoutes);
   app.use('/api/admin/opportunities', adminOpportunitiesReviewRoutes);
   app.use('/api/admin/ingest-stats', adminIngestStatsRoutes);
+  app.use('/api/admin/ingest/adhoc', adminIngestAdhocRoutes);
+  app.use('/api/admin/ingest/run-now', adminIngestRunNowRoutes);
 
   app.use(errorHandler);
 

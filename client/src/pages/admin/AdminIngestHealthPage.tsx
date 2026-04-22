@@ -1,9 +1,10 @@
 // Admin Ingest Pipeline Health dashboard.
-// Shows last 5 runs, per-source job breakdown, counts by status, and
-// feature-flag state. Read-only — no mutations.
+// Shows last 5 runs, per-source job breakdown, counts by status, feature-flag
+// state, an ad-hoc URL ingest form, and a "run pipeline now" trigger.
 
-import { useQuery } from '@tanstack/react-query';
-import { Activity, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Activity, CheckCircle2, XCircle, Clock, Play, Link2 } from 'lucide-react';
 import { api } from '../../services/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -45,6 +46,20 @@ type IngestStatsData = {
     scholarshipsIngestEnabled: boolean;
     opportunitiesIngestEnabled: boolean;
   };
+};
+
+type AdhocResult = {
+  itemsFound: number;
+  itemsPublished: number;
+  itemsQueued: number;
+  itemsRejected: number;
+  ingestedSample: Array<{ title: string; status: string; confidence?: number }>;
+  message?: string;
+};
+
+type RunNowResult = {
+  scholarships: { enqueued: number; skipped?: string; error?: string; totals?: { itemsPublished: number; itemsQueued: number; itemsRejected: number } };
+  opportunities: { enqueued: number; skipped?: string; error?: string; totals?: { itemsPublished: number; itemsQueued: number; itemsRejected: number } };
 };
 
 const QK = ['admin', 'ingest-stats'] as const;
@@ -125,6 +140,210 @@ function CountCard({
   );
 }
 
+function DecisionPill({ status }: { status: string }) {
+  const s = status.toUpperCase();
+  const cls =
+    s === 'PUBLISHED'
+      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
+      : s === 'PENDING_REVIEW' || s === 'QUEUED' || s === 'INGESTED'
+      ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+      : 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300';
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${cls}`}>
+      {status}
+    </span>
+  );
+}
+
+// ── Ad-hoc ingest card ────────────────────────────────────────────────────────
+
+function AdhocIngestCard() {
+  const [url, setUrl] = useState('');
+  const [kind, setKind] = useState<'scholarship' | 'job'>('scholarship');
+  const [result, setResult] = useState<AdhocResult | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/admin/ingest/adhoc', { url, kind });
+      return res.data.data as AdhocResult;
+    },
+    onSuccess: (data) => {
+      setResult(data);
+      setErrorMsg(null);
+      setUrl('');
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { error?: { message?: string } } }; message?: string };
+      setErrorMsg(e.response?.data?.error?.message ?? e.message ?? 'Unknown error');
+      setResult(null);
+    }
+  });
+
+  const busy = mutation.status === 'pending';
+
+  return (
+    <div className="card space-y-4">
+      <div className="flex items-center gap-2">
+        <Link2 size={16} className="text-[#065F46]" />
+        <div className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">Ad-hoc URL ingest</div>
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="flex-1">
+          <label className="mb-1 block text-xs font-semibold text-[var(--muted)]">URL</label>
+          <input
+            type="url"
+            className="input w-full"
+            placeholder="https://scholarship-portal.example.com/listings"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            disabled={busy}
+          />
+        </div>
+
+        <div className="shrink-0">
+          <label className="mb-1 block text-xs font-semibold text-[var(--muted)]">Type</label>
+          <div className="flex gap-3">
+            {(['scholarship', 'job'] as const).map((k) => (
+              <label key={k} className="flex items-center gap-1.5 cursor-pointer text-sm">
+                <input
+                  type="radio"
+                  name="adhoc-kind"
+                  value={k}
+                  checked={kind === k}
+                  onChange={() => setKind(k)}
+                  disabled={busy}
+                  className="accent-[#065F46]"
+                />
+                {k.charAt(0).toUpperCase() + k.slice(1)}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <button
+          className="btn-primary shrink-0 disabled:opacity-50"
+          disabled={busy || !url.trim()}
+          onClick={() => mutation.mutate()}
+        >
+          {busy ? 'Ingesting…' : 'Ingest URL'}
+        </button>
+      </div>
+
+      {errorMsg && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-400">
+          {errorMsg}
+        </div>
+      )}
+
+      {result && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 dark:border-emerald-800 dark:bg-emerald-950/20">
+          {result.itemsFound === 0 ? (
+            <p className="text-sm text-[var(--muted)]">{result.message ?? 'No items found.'}</p>
+          ) : (
+            <>
+              <p className="text-sm font-semibold text-[var(--fg)]">
+                Found {result.itemsFound} item{result.itemsFound !== 1 ? 's' : ''} — {result.itemsPublished} published,{' '}
+                {result.itemsQueued} queued, {result.itemsRejected} rejected
+              </p>
+              {result.ingestedSample.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {result.ingestedSample.map((s, i) => (
+                    <li key={i} className="flex items-center gap-2 text-xs text-[var(--muted)]">
+                      <DecisionPill status={s.status} />
+                      <span className="line-clamp-1">{s.title}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Run-pipeline-now card ─────────────────────────────────────────────────────
+
+function RunNowCard() {
+  const queryClient = useQueryClient();
+  const [which, setWhich] = useState<'all' | 'scholarships' | 'opportunities'>('all');
+  const [toast, setToast] = useState<string | null>(null);
+  const [toastKind, setToastKind] = useState<'success' | 'error'>('success');
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/admin/ingest/run-now', { which });
+      return res.data.data as RunNowResult;
+    },
+    onSuccess: (data) => {
+      const sch = data.scholarships;
+      const opp = data.opportunities;
+      const parts: string[] = [];
+      if (sch.error) parts.push(`Scholarships error: ${sch.error}`);
+      else if (sch.skipped) parts.push(`Scholarships: skipped (flag off)`);
+      else parts.push(`Scholarships: ${sch.enqueued} adapters run, ${sch.totals?.itemsPublished ?? 0} published`);
+
+      if (opp.error) parts.push(`Jobs error: ${opp.error}`);
+      else if (opp.skipped) parts.push(`Jobs: skipped (flag off)`);
+      else parts.push(`Jobs: ${opp.enqueued} adapters run, ${opp.totals?.itemsPublished ?? 0} published`);
+
+      setToast(parts.join(' | '));
+      setToastKind('success');
+      queryClient.invalidateQueries({ queryKey: QK });
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { error?: { message?: string } } }; message?: string };
+      setToast(e.response?.data?.error?.message ?? e.message ?? 'Run failed');
+      setToastKind('error');
+    }
+  });
+
+  const busy = mutation.status === 'pending';
+
+  return (
+    <div className="card space-y-3">
+      <div className="flex items-center gap-2">
+        <Play size={15} className="text-[#065F46]" />
+        <div className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">Run pipeline now</div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <select
+          className="input w-44"
+          value={which}
+          onChange={(e) => setWhich(e.target.value as typeof which)}
+          disabled={busy}
+        >
+          <option value="all">Both (Scholarships + Jobs)</option>
+          <option value="scholarships">Scholarships only</option>
+          <option value="opportunities">Jobs only</option>
+        </select>
+
+        <button
+          className="btn-primary disabled:opacity-50"
+          disabled={busy}
+          onClick={() => { setToast(null); mutation.mutate(); }}
+        >
+          {busy ? 'Running…' : 'Run now'}
+        </button>
+      </div>
+
+      {toast && (
+        <div className={`rounded-lg border px-4 py-2.5 text-sm ${
+          toastKind === 'success'
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300'
+            : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-400'
+        }`}>
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AdminIngestHealthPage() {
@@ -177,6 +396,12 @@ export default function AdminIngestHealthPage() {
           </div>
         )}
       </div>
+
+      {/* Ad-hoc ingest */}
+      <AdhocIngestCard />
+
+      {/* Run pipeline now */}
+      <RunNowCard />
 
       {/* Last 5 runs */}
       <div>
