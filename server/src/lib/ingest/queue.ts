@@ -39,11 +39,12 @@ export async function markRunning(id: string) {
 }
 
 export async function markDone(id: string, tallies: {
-  itemsFound?: number; itemsPublished?: number; itemsQueued?: number;
+  itemsFound?: number; itemsPublished?: number; itemsQueued?: number; itemsRejected?: number;
 }) {
+  const { itemsFound, itemsPublished, itemsQueued } = tallies;
   return prisma.ingestJob.update({
     where: { id },
-    data: { status: 'DONE', ...tallies }
+    data: { status: 'DONE', itemsFound, itemsPublished, itemsQueued }
   });
 }
 
