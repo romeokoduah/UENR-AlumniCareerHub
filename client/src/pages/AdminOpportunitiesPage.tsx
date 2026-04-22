@@ -11,6 +11,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import type { Opportunity } from '../types';
 import { useBulkSelection } from '../hooks/useBulkSelection';
+import { Pagination } from '../components/ui/Pagination';
 
 type AdminOpportunity = Opportunity & {
   isActive: boolean;
@@ -55,7 +56,6 @@ export default function AdminOpportunitiesPage() {
   const handleSetStatus = (v: StatusFilter) => { setStatus(v); setPage(1); clear(); };
 
   const pageData = data.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const totalPages = Math.max(1, Math.ceil(data.length / PAGE_SIZE));
 
   const counts = useMemo(() => {
     const now = Date.now();
@@ -237,13 +237,7 @@ export default function AdminOpportunitiesPage() {
               onDelete={() => confirmDelete(o)}
             />
           ))}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2 pt-4">
-              <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="btn-ghost text-sm disabled:opacity-40">« Prev</button>
-              <span className="text-sm text-[var(--muted)]">Page {page} of {totalPages}</span>
-              <button disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} className="btn-ghost text-sm disabled:opacity-40">Next »</button>
-            </div>
-          )}
+          <Pagination total={data.length} page={page} pageSize={PAGE_SIZE} onPageChange={setPage} />
         </div>
       )}
 

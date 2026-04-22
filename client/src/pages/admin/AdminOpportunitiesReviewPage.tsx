@@ -15,9 +15,11 @@ import {
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { ModerationHistoryPanel } from '../../components/admin/ModerationHistoryPanel';
+import { Pagination } from '../../components/ui/Pagination';
 import type { Opportunity } from '../../types';
 
 const QK = ['admin', 'opportunities', 'pending'] as const;
+const PAGE_SIZE = 20;
 
 function Chip({ label }: { label?: string | null }) {
   return (
@@ -164,6 +166,7 @@ export default function AdminOpportunitiesReviewPage() {
   const qc = useQueryClient();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selected, setSelected] = useState(new Set<string>());
+  const [page, setPage] = useState(1);
 
   const { data: pending = [], isLoading } = useQuery<Opportunity[]>({
     queryKey: QK,
@@ -178,7 +181,8 @@ export default function AdminOpportunitiesReviewPage() {
     if (next.size !== selected.size) setSelected(next);
   }, [pending]);
 
-  const allVisible = pending;
+  const pageData = pending.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const allVisible = pageData;
   const allSelected = allVisible.length > 0 && allVisible.every((o) => selected.has(o.id));
   const someSelected = selected.size > 0 && !allSelected;
 
@@ -330,7 +334,7 @@ export default function AdminOpportunitiesReviewPage() {
             <span className="text-xs text-[var(--muted)]">Select all</span>
           </div>
 
-          {pending.map((opp, i) => (
+          {pageData.map((opp, i) => (
             <motion.div
               key={opp.id}
               initial={{ opacity: 0, y: 8 }}
@@ -460,6 +464,7 @@ export default function AdminOpportunitiesReviewPage() {
         </div>
       )}
 
+      <Pagination total={pending.length} page={page} pageSize={PAGE_SIZE} onPageChange={setPage} />
       <ModerationHistoryPanel kind="opportunity" pendingQueryKey={QK} />
     </div>
   );

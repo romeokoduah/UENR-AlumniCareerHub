@@ -14,7 +14,10 @@ import {
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { ModerationHistoryPanel } from '../../components/admin/ModerationHistoryPanel';
+import { Pagination } from '../../components/ui/Pagination';
 import type { Scholarship } from '../../types';
+
+const PAGE_SIZE = 20;
 
 const QK = ['admin', 'scholarships', 'pending'] as const;
 
@@ -109,6 +112,7 @@ export default function AdminScholarshipsReviewPage() {
   const qc = useQueryClient();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selected, setSelected] = useState(new Set<string>());
+  const [page, setPage] = useState(1);
 
   const { data: pending = [], isLoading } = useQuery<Scholarship[]>({
     queryKey: QK,
@@ -123,7 +127,8 @@ export default function AdminScholarshipsReviewPage() {
     if (next.size !== selected.size) setSelected(next);
   }, [pending]);
 
-  const allVisible = pending;
+  const pageData = pending.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const allVisible = pageData;
   const allSelected = allVisible.length > 0 && allVisible.every((s) => selected.has(s.id));
   const someSelected = selected.size > 0 && !allSelected;
 
@@ -272,7 +277,7 @@ export default function AdminScholarshipsReviewPage() {
             <span className="text-xs text-[var(--muted)]">Select all</span>
           </div>
 
-          {pending.map((s, i) => (
+          {pageData.map((s, i) => (
             <motion.div
               key={s.id}
               initial={{ opacity: 0, y: 8 }}
@@ -392,6 +397,7 @@ export default function AdminScholarshipsReviewPage() {
         </div>
       )}
 
+      <Pagination total={pending.length} page={page} pageSize={PAGE_SIZE} onPageChange={setPage} />
       <ModerationHistoryPanel kind="scholarship" pendingQueryKey={QK} />
     </div>
   );
