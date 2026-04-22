@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
@@ -220,16 +221,17 @@ router.get('/', optionalAuth, async (req, res, next) => {
   try {
     const { q, type, locationType, industry, skill, origin } = req.query as Record<string, string>;
 
-    // Build origin filter:
-    // - community → USER | ADMIN | null (legacy rows pre-source-column)
-    // - aggregator → INGESTED
-    // - unset → no filter
-    const originFilter =
+    // Build origin AND-clause:
+    // - community → source USER or ADMIN (Prisma enum field has a default so
+    //   it is never truly null; legacy rows defaulted to USER anyway)
+    // - aggregator → source = INGESTED
+    // - unset → no restriction
+    const originClause: Prisma.OpportunityWhereInput | undefined =
       origin === 'community'
-        ? { OR: [{ source: 'USER' as const }, { source: 'ADMIN' as const }, { source: null }] }
+        ? { source: { in: ['USER', 'ADMIN'] } }
         : origin === 'aggregator'
-        ? { source: 'INGESTED' as const }
-        : {};
+        ? { source: 'INGESTED' }
+        : undefined;
 
     const items = await prisma.opportunity.findMany({
       where: {
@@ -244,9 +246,9 @@ router.get('/', optionalAuth, async (req, res, next) => {
               { deadline: null },
               { deadline: { gte: new Date() } }
             ]
-          }
+          },
+          ...(originClause ? [originClause] : [])
         ],
-        ...originFilter,
         ...(type && { type: type as any }),
         ...(locationType && { locationType: locationType as any }),
         ...(industry && { industry: { contains: industry, mode: 'insensitive' } }),
