@@ -10,6 +10,36 @@ export function ScholarshipCard({ item, index = 0 }: { item: Scholarship; index?
   const isIngested = item.source === 'INGESTED';
   const sourceLabel = isIngested ? `via ${item.sourceName ?? 'aggregator'}` : null;
 
+  // Deadline display
+  let deadlineNode: React.ReactNode;
+  if (isRolling) {
+    deadlineNode = (
+      <span className="inline-flex items-center gap-1 rounded-full bg-[var(--bg)] border border-[var(--border)] px-2 py-0.5 text-[11px] font-semibold text-[var(--muted)]">
+        Rolling
+      </span>
+    );
+  } else if (closed) {
+    deadlineNode = (
+      <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 dark:bg-rose-900/30 px-2 py-0.5 text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+        <Clock size={11} /> Closed
+      </span>
+    );
+  } else if (closingSoon) {
+    const formatted = new Date(item.deadline!).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    deadlineNode = (
+      <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#FB7185]">
+        <Clock size={12} /> {formatted}
+      </span>
+    );
+  } else {
+    const formatted = new Date(item.deadline!).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    deadlineNode = (
+      <span className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--muted)]">
+        <Clock size={12} /> {formatted}
+      </span>
+    );
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -45,12 +75,7 @@ export function ScholarshipCard({ item, index = 0 }: { item: Scholarship; index?
       )}
 
       <div className="mt-auto pt-4 flex items-center justify-between">
-        <span className={`inline-flex items-center gap-1 text-xs font-semibold ${
-          isRolling ? 'text-[var(--muted)]' : closed ? 'text-[var(--muted)]' : closingSoon ? 'text-[#FB7185]' : 'text-[var(--muted)]'
-        }`}>
-          <Clock size={12} />
-          {isRolling ? 'Rolling deadline' : closed ? 'Closed' : closingSoon ? `Closes in ${daysLeft}d` : `${daysLeft}d left`}
-        </span>
+        {deadlineNode}
         <a href={item.applicationUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-[#065F46] dark:text-[#84CC16] inline-flex items-center gap-1">
           Apply <ExternalLink size={12} />
         </a>

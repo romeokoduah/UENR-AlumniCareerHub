@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../services/api';
 import { OpportunityCard } from '../components/shared/OpportunityCard';
 import { EmptyState } from '../components/ui/EmptyState';
+import { Pagination } from '../components/ui/Pagination';
 import { useAuthStore } from '../store/auth';
 import type { Opportunity } from '../types';
 
@@ -40,6 +41,8 @@ const ORIGINS = [
   { value: 'aggregator', label: 'Aggregator feeds' }
 ];
 
+const PAGE_SIZE = 24;
+
 export default function OpportunitiesPage() {
   const user = useAuthStore((s) => s.user);
   const [q, setQ] = useState('');
@@ -47,12 +50,20 @@ export default function OpportunitiesPage() {
   const [locationType, setLocationType] = useState('');
   const [industry, setIndustry] = useState('');
   const [origin, setOrigin] = useState('');
+  const [page, setPage] = useState(1);
 
   const { data = [], isLoading } = useQuery<Opportunity[]>({
     queryKey: ['opportunities', q, type, locationType, industry, origin],
     queryFn: async () =>
       (await api.get('/opportunities', { params: { q, type, locationType, industry, origin } })).data.data
   });
+
+  const handleFilter = (setter: (v: string) => void) => (v: string) => {
+    setter(v);
+    setPage(1);
+  };
+
+  const pageData = data.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10">
@@ -71,18 +82,23 @@ export default function OpportunitiesPage() {
       <div className="card mb-6 flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-[240px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" size={16} />
-          <input className="input pl-9" placeholder="Search title, company, description..." value={q} onChange={(e) => setQ(e.target.value)} />
+          <input
+            className="input pl-9"
+            placeholder="Search title, company, description..."
+            value={q}
+            onChange={(e) => { setQ(e.target.value); setPage(1); }}
+          />
         </div>
-        <select className="input max-w-[180px]" value={type} onChange={(e) => setType(e.target.value)}>
+        <select className="input max-w-[180px]" value={type} onChange={(e) => handleFilter(setType)(e.target.value)}>
           {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
         </select>
-        <select className="input max-w-[180px]" value={locationType} onChange={(e) => setLocationType(e.target.value)}>
+        <select className="input max-w-[180px]" value={locationType} onChange={(e) => handleFilter(setLocationType)(e.target.value)}>
           {LOCATIONS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
         </select>
-        <select className="input max-w-[200px]" value={industry} onChange={(e) => setIndustry(e.target.value)}>
+        <select className="input max-w-[200px]" value={industry} onChange={(e) => handleFilter(setIndustry)(e.target.value)}>
           {INDUSTRIES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
         </select>
-        <select className="input max-w-[180px]" value={origin} onChange={(e) => setOrigin(e.target.value)}>
+        <select className="input max-w-[180px]" value={origin} onChange={(e) => handleFilter(setOrigin)(e.target.value)}>
           {ORIGINS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
         </select>
       </div>
@@ -98,9 +114,14 @@ export default function OpportunitiesPage() {
           message="Try different keywords or clear your filters to see more opportunities."
         />
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {data.map((o, i) => <OpportunityCard key={o.id} item={o} index={i} />)}
-        </div>
+        <>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {pageData.map((o, i) => <OpportunityCard key={o.id} item={o} index={i} />)}
+          </div>
+          <div className="mt-6">
+            <Pagination total={data.length} page={page} pageSize={PAGE_SIZE} onPageChange={setPage} />
+          </div>
+        </>
       )}
     </div>
   );

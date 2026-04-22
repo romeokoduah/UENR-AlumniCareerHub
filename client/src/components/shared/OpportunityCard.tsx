@@ -26,14 +26,38 @@ function formatSalary(item: Opportunity): string | null {
 }
 
 export function OpportunityCard({ item, index = 0 }: { item: Opportunity; index?: number }) {
-  const hasDeadline = item.deadline && !isNaN(new Date(item.deadline).getTime());
-  const daysLeft = hasDeadline
-    ? Math.max(0, Math.ceil((new Date(item.deadline).getTime() - Date.now()) / 86400000))
-    : null;
-  const closingSoon = daysLeft !== null && daysLeft <= 7;
+  const isRolling = !item.deadline || isNaN(new Date(item.deadline).getTime());
+  const daysLeft = isRolling
+    ? null
+    : Math.ceil((new Date(item.deadline).getTime() - Date.now()) / 86400000);
+  const closed = daysLeft !== null && daysLeft < 0;
+  const closingSoon = daysLeft !== null && daysLeft >= 0 && daysLeft <= 7;
   const salary = formatSalary(item);
   const isIngested = item.source === 'INGESTED';
   const sourceLabel = isIngested ? `via ${item.sourceName ?? 'aggregator'}` : null;
+
+  // Deadline pill/label
+  let deadlinePill: React.ReactNode = null;
+  if (isRolling) {
+    deadlinePill = (
+      <span className="inline-flex items-center gap-1 rounded-full bg-[var(--bg)] border border-[var(--border)] px-2 py-0.5 text-[11px] font-semibold text-[var(--muted)]">
+        Rolling
+      </span>
+    );
+  } else if (closed) {
+    deadlinePill = (
+      <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 dark:bg-rose-900/30 px-2 py-0.5 text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+        <Clock size={11} /> Closed
+      </span>
+    );
+  } else {
+    const formatted = new Date(item.deadline).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    deadlinePill = (
+      <span className={`inline-flex items-center gap-1 font-semibold text-xs ${closingSoon ? 'text-[#FB7185]' : 'text-[var(--muted)]'}`}>
+        <Clock size={12} /> {formatted}
+      </span>
+    );
+  }
 
   return (
     <motion.div
@@ -64,11 +88,7 @@ export function OpportunityCard({ item, index = 0 }: { item: Opportunity; index?
               <DollarSign size={12} /> {salary}
             </span>
           )}
-          {daysLeft !== null && (
-            <span className={`inline-flex items-center gap-1 font-semibold ${closingSoon ? 'text-[#FB7185]' : ''}`}>
-              <Clock size={12} /> {daysLeft}d left
-            </span>
-          )}
+          {deadlinePill}
         </div>
 
         {item.requiredSkills?.length > 0 && (
