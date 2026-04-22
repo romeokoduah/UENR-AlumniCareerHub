@@ -5,14 +5,17 @@
 // questions, achievements, unpublished portfolios) plus auto-hidden
 // flagged interview questions. Per-row Approve / Reject / Edit actions
 // all call /api/admin/moderation and re-fetch on success.
+//
+// Bulk select uses composite key "<kind>:<id>" to avoid collisions across
+// tables (since the same UUID might appear in two different tables).
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
   Check, X, Pencil, Inbox, ChevronDown, ChevronUp, Briefcase,
-  GraduationCap, BookOpen, HelpCircle, Trophy, Globe, Flag
+  GraduationCap, BookOpen, HelpCircle, Trophy, Globe, Flag, CheckSquare
 } from 'lucide-react';
 import { api } from '../../services/api';
 
@@ -43,6 +46,12 @@ type QueueItem = {
 };
 
 type Counts = Record<Kind, number> & { total: number };
+
+type BulkResult = {
+  updated: number;
+  skipped: number;
+  failed: Array<{ kind: string; id: string; error: string }>;
+};
 
 const KIND_META: Record<Kind, { label: string; short: string; icon: typeof Briefcase; color: string }> = {
   opportunity:             { label: 'Opportunity',          short: 'Job',         icon: Briefcase,    color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
@@ -80,11 +89,17 @@ function fmtDate(iso: string): string {
   }
 }
 
+/** Composite key used in the selected Set to avoid cross-table id collisions. */
+function compositeKey(item: QueueItem): string {
+  return `${item.kind}:${item.id}`;
+}
+
 export default function AdminModerationPage() {
   const qc = useQueryClient();
   const [filter, setFilter] = useState<'all' | Kind>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<QueueItem | null>(null);
+  const [selected, setSelected] = useState(new Set<string>());
 
   const { data, isLoading } = useQuery<{ items: QueueItem[] }>({
     queryKey: ['admin', 'moderation', 'queue'],
@@ -96,6 +111,24 @@ export default function AdminModerationPage() {
     queryKey: ['admin', 'moderation', 'counts'],
     queryFn: async () => (await api.get('/admin/moderation/counts')).data.data
   });
+
+  // Auto-drop composite keys no longer visible after refetch.
+  useEffect(() => {
+    if (selected.size === 0) return;
+    const visibleKeys = new Set(items.map(compositeKey));
+    const next = new Set([...selected].filter((k) => visibleKeys.has(k)));
+    if (next.size !== selected.size) setSelected(next);
+  }, [items]);
+
+  const filtered = useMemo(() => {
+    if (filter === 'all') return items;
+    return items.filter((it) => it.kind === filter);
+  }, [items, filter]);
+
+  // Tri-state select-all (scoped to currently-filtered rows)
+  const allFilteredKeys = filtered.map(compositeKey);
+  const allSelected = allFilteredKeys.length > 0 && allFilteredKeys.every((k) => selected.has(k));
+  const someSelected = selected.size > 0 && !allFilteredKeys.every((k) => selected.has(k));
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['admin', 'moderation', 'queue'] });
@@ -123,12 +156,50 @@ export default function AdminModerationPage() {
     onError: (e: any) => toast.error(e?.response?.data?.error?.message ?? 'Failed to save')
   });
 
-  const filtered = useMemo(() => {
-    if (filter === 'all') return items;
-    return items.filter((it) => it.kind === filter);
-  }, [items, filter]);
+  const bulkApproveMut = useMutation({
+    mutationFn: async (keys: string[]) => {
+      const items = keys.map((k) => {
+        const colonIdx = k.indexOf(':');
+        return { kind: k.slice(0, colonIdx), id: k.slice(colonIdx + 1) };
+      });
+      const res = await api.post('/admin/moderation/bulk/approve', { items });
+      return res.data.data as BulkResult;
+    },
+    onSuccess: (data) => {
+      invalidate();
+      setSelected(new Set());
+      const parts: string[] = [];
+      if (data.updated > 0) parts.push(`${data.updated} approved`);
+      if (data.skipped > 0) parts.push(`${data.skipped} skipped`);
+      if (data.failed.length > 0) parts.push(`${data.failed.length} failed`);
+      toast.success(parts.join(', ') || 'Done');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error?.message ?? 'Bulk approve failed')
+  });
+
+  const bulkRejectMut = useMutation({
+    mutationFn: async (keys: string[]) => {
+      const items = keys.map((k) => {
+        const colonIdx = k.indexOf(':');
+        return { kind: k.slice(0, colonIdx), id: k.slice(colonIdx + 1) };
+      });
+      const res = await api.post('/admin/moderation/bulk/reject', { items });
+      return res.data.data as BulkResult;
+    },
+    onSuccess: (data) => {
+      invalidate();
+      setSelected(new Set());
+      const parts: string[] = [];
+      if (data.updated > 0) parts.push(`${data.updated} rejected`);
+      if (data.skipped > 0) parts.push(`${data.skipped} skipped`);
+      if (data.failed.length > 0) parts.push(`${data.failed.length} failed`);
+      toast.success(parts.join(', ') || 'Done');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error?.message ?? 'Bulk reject failed')
+  });
 
   const total = counts?.total ?? items.length;
+  const isBulkBusy = bulkApproveMut.isPending || bulkRejectMut.isPending;
 
   const onReject = (item: QueueItem) => {
     const typed = window.prompt(
@@ -184,6 +255,35 @@ export default function AdminModerationPage() {
         })}
       </div>
 
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div className="sticky top-0 z-10 mb-4 flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--card)]/95 p-3 backdrop-blur">
+          <CheckSquare size={16} className="shrink-0 text-[#065F46] dark:text-[#84CC16]" />
+          <span className="flex-1 text-sm font-semibold">{selected.size} selected</span>
+          <button
+            onClick={() => bulkApproveMut.mutate([...selected])}
+            disabled={isBulkBusy}
+            className="inline-flex items-center gap-1 rounded-lg bg-[#065F46] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#064E3B] disabled:opacity-60"
+          >
+            <Check size={13} /> Approve all
+          </button>
+          <button
+            onClick={() => bulkRejectMut.mutate([...selected])}
+            disabled={isBulkBusy}
+            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:hover:bg-rose-950 disabled:opacity-60"
+          >
+            <X size={13} /> Reject all
+          </button>
+          <button
+            onClick={() => setSelected(new Set())}
+            disabled={isBulkBusy}
+            className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-60"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="rounded-2xl border border-dashed border-[var(--border)] p-10 text-center text-sm text-[var(--muted)]">
           Loading queue…
@@ -199,6 +299,27 @@ export default function AdminModerationPage() {
           <table className="w-full text-sm">
             <thead className="border-b border-[var(--border)] text-left text-xs uppercase tracking-wider text-[var(--muted)]">
               <tr>
+                <th className="px-3 py-3">
+                  {/* Select-all tri-state checkbox */}
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                    onChange={() => {
+                      if (allSelected || someSelected) {
+                        // Deselect all filtered rows
+                        const next = new Set(selected);
+                        allFilteredKeys.forEach((k) => next.delete(k));
+                        setSelected(next);
+                      } else {
+                        const next = new Set(selected);
+                        allFilteredKeys.forEach((k) => next.add(k));
+                        setSelected(next);
+                      }
+                    }}
+                    className="h-4 w-4 cursor-pointer accent-[#065F46]"
+                  />
+                </th>
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Title</th>
                 <th className="px-4 py-3">Submitter</th>
@@ -212,12 +333,21 @@ export default function AdminModerationPage() {
                 const meta = KIND_META[it.kind];
                 const Icon = meta.icon;
                 const expanded = expandedId === `${it.kind}:${it.id}`;
+                const ck = compositeKey(it);
+                const isChecked = selected.has(ck);
                 return (
                   <Row
                     key={`${it.kind}:${it.id}`}
                     index={i}
                     item={it}
                     expanded={expanded}
+                    checked={isChecked}
+                    onCheck={(checked) => {
+                      const next = new Set(selected);
+                      if (checked) next.add(ck);
+                      else next.delete(ck);
+                      setSelected(next);
+                    }}
                     onToggle={() =>
                       setExpandedId(expanded ? null : `${it.kind}:${it.id}`)
                     }
@@ -256,6 +386,8 @@ function Row({
   index,
   item,
   expanded,
+  checked,
+  onCheck,
   onToggle,
   onApprove,
   onReject,
@@ -267,6 +399,8 @@ function Row({
   index: number;
   item: QueueItem;
   expanded: boolean;
+  checked: boolean;
+  onCheck: (checked: boolean) => void;
   onToggle: () => void;
   onApprove: () => void;
   onReject: () => void;
@@ -284,6 +418,14 @@ function Row({
         className="cursor-pointer border-b border-[var(--border)]/50 last:border-b-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.02]"
         onClick={onToggle}
       >
+        <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={(e) => onCheck(e.target.checked)}
+            className="h-4 w-4 cursor-pointer accent-[#065F46]"
+          />
+        </td>
         <td className="px-4 py-3">
           <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${meta.color}`}>
             <Icon size={10} /> {meta.short}
@@ -344,7 +486,7 @@ function Row({
             exit={{ opacity: 0 }}
             className="border-b border-[var(--border)]/50"
           >
-            <td colSpan={6} className="bg-black/[0.02] px-4 py-4 dark:bg-white/[0.02]">
+            <td colSpan={7} className="bg-black/[0.02] px-4 py-4 dark:bg-white/[0.02]">
               <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">Full preview</div>
               <div className="mb-3 whitespace-pre-wrap text-xs">{item.preview || '—'}</div>
               <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">Raw record</div>

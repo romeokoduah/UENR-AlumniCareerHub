@@ -14,9 +14,21 @@
 //
 // Note: FreelanceGig has no flagging system yet — intentionally skipped.
 //
+// Audit action naming convention used throughout this file and echoed in
+// adminScholarshipsReview + adminOpportunitiesReview:
+//   moderation.<kind>.approved        — single-item approve
+//   moderation.<kind>.rejected        — single-item reject
+//   moderation.<kind>.edited_and_published
+//   moderation.bulk_approve           — bulk approve across mixed kinds
+//   moderation.bulk_reject            — bulk reject across mixed kinds
+//   scholarship.approve / scholarship.reject / scholarship.bulk_approve ...
+//   opportunity.approve / opportunity.reject / opportunity.bulk_approve ...
+//
 // Endpoints (all gated by requireAuth + requireSuperuser):
 //   GET    /                  unified queue (≤100 items, createdAt desc)
 //   GET    /counts            per-kind pending counts for sidebar badge
+//   POST   /bulk/approve      bulk approve mixed-kind items
+//   POST   /bulk/reject       bulk reject mixed-kind items
 //   POST   /:kind/:id/approve approve (kind-aware field flip)
 //   POST   /:kind/:id/reject  reject (kind-aware: deactivate / delete / no-op)
 //   PATCH  /:kind/:id         edit-then-publish (validated per kind, sets
@@ -312,6 +324,200 @@ async function rowExists(kind: Kind, id: string): Promise<boolean> {
   }
 }
 
+// ---- Factored per-item approve/reject helpers ---------------------------
+//
+// These are extracted so that BOTH the single-item /:kind/:id handlers AND
+// the new bulk handlers call exactly the same kind-switch logic.
+// Returns true if the item was actually transitioned, false if it was
+// a no-op (row gone, already in the target state, etc.).
+
+async function approveOne(kind: Kind, id: string): Promise<boolean> {
+  switch (kind) {
+    case 'opportunity': {
+      const row = await prisma.opportunity.findUnique({ where: { id }, select: { isApproved: true } });
+      if (!row || row.isApproved) return false;
+      await prisma.opportunity.update({ where: { id }, data: { isApproved: true } });
+      return true;
+    }
+    case 'scholarship': {
+      const row = await prisma.scholarship.findUnique({ where: { id }, select: { isApproved: true } });
+      if (!row || row.isApproved) return false;
+      await prisma.scholarship.update({ where: { id }, data: { isApproved: true } });
+      return true;
+    }
+    case 'learning_resource': {
+      const row = await prisma.learningResource.findUnique({ where: { id }, select: { isApproved: true } });
+      if (!row || row.isApproved) return false;
+      await prisma.learningResource.update({ where: { id }, data: { isApproved: true } });
+      return true;
+    }
+    case 'interview_question': {
+      const row = await prisma.interviewQuestion.findUnique({ where: { id }, select: { isApproved: true } });
+      if (!row || row.isApproved) return false;
+      await prisma.interviewQuestion.update({ where: { id }, data: { isApproved: true } });
+      return true;
+    }
+    case 'achievement': {
+      const row = await prisma.achievement.findUnique({ where: { id }, select: { isApproved: true } });
+      if (!row || row.isApproved) return false;
+      await prisma.achievement.update({ where: { id }, data: { isApproved: true } });
+      return true;
+    }
+    case 'portfolio': {
+      const row = await prisma.portfolio.findUnique({ where: { id }, select: { isPublished: true } });
+      if (!row || row.isPublished) return false;
+      await prisma.portfolio.update({ where: { id }, data: { isPublished: true } });
+      return true;
+    }
+    case 'interview_question_flag': {
+      // Approving a flagged question = clearing the flags so it's visible again.
+      const row = await prisma.interviewQuestion.findUnique({ where: { id }, select: { flagCount: true } });
+      if (!row) return false;
+      if (row.flagCount === 0) return false;
+      await prisma.interviewQuestion.update({ where: { id }, data: { flagCount: 0 } });
+      return true;
+    }
+  }
+}
+
+async function rejectOne(kind: Kind, id: string): Promise<boolean> {
+  switch (kind) {
+    case 'opportunity': {
+      const row = await prisma.opportunity.findUnique({ where: { id }, select: { isActive: true } });
+      if (!row) return false;
+      if (!row.isActive) return false; // already deactivated
+      await prisma.opportunity.update({ where: { id }, data: { isActive: false } });
+      return true;
+    }
+    case 'scholarship': {
+      const row = await prisma.scholarship.findUnique({ where: { id }, select: { isApproved: true } });
+      if (!row) return false;
+      // Scholarship rejection = explicitly set isApproved=false (no isActive flag).
+      await prisma.scholarship.update({ where: { id }, data: { isApproved: false } });
+      return true;
+    }
+    case 'learning_resource': {
+      const row = await prisma.learningResource.findUnique({ where: { id }, select: { id: true } });
+      if (!row) return false;
+      await prisma.learningResource.delete({ where: { id } });
+      return true;
+    }
+    case 'interview_question': {
+      const row = await prisma.interviewQuestion.findUnique({ where: { id }, select: { id: true } });
+      if (!row) return false;
+      await prisma.interviewQuestion.delete({ where: { id } });
+      return true;
+    }
+    case 'achievement': {
+      const row = await prisma.achievement.findUnique({ where: { id }, select: { id: true } });
+      if (!row) return false;
+      await prisma.achievement.delete({ where: { id } });
+      return true;
+    }
+    case 'portfolio': {
+      // Portfolios are owner-managed drafts — admin doesn't delete them on
+      // reject. No-op intentionally.
+      const row = await prisma.portfolio.findUnique({ where: { id }, select: { id: true } });
+      return !!row; // count as "handled" if it exists
+    }
+    case 'interview_question_flag': {
+      // Reject = the flags were correct, take the question down.
+      const row = await prisma.interviewQuestion.findUnique({ where: { id }, select: { id: true } });
+      if (!row) return false;
+      await prisma.interviewQuestion.delete({ where: { id } });
+      return true;
+    }
+  }
+}
+
+// ---- POST /bulk/approve --------------------------------------------------
+
+const bulkSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        kind: z.enum(KINDS),
+        id: z.string().min(1)
+      })
+    )
+    .min(1, 'items must not be empty')
+    .max(100, 'items must not exceed 100')
+});
+
+router.post('/bulk/approve', async (req, res, next) => {
+  try {
+    const parsed = bulkSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: parsed.error.errors[0]?.message ?? 'Invalid body' } });
+    }
+    const { items } = parsed.data;
+    const actorId = req.auth!.sub;
+
+    let updated = 0;
+    let skipped = 0;
+    const failed: Array<{ kind: string; id: string; error: string }> = [];
+
+    for (const item of items) {
+      try {
+        const transitioned = await approveOne(item.kind, item.id);
+        if (transitioned) updated++;
+        else skipped++;
+      } catch (err: unknown) {
+        failed.push({ kind: item.kind, id: item.id, error: (err as Error).message ?? 'Unknown error' });
+      }
+    }
+
+    const kinds = [...new Set(items.map((i) => i.kind))];
+    const ids = items.map((i) => i.id);
+
+    await logAudit({
+      actorId,
+      action: 'moderation.bulk_approve',
+      metadata: { itemCount: items.length, updated, skipped, kinds, ids }
+    });
+
+    res.json({ success: true, data: { updated, skipped, failed } });
+  } catch (e) { next(e); }
+});
+
+// ---- POST /bulk/reject ---------------------------------------------------
+
+router.post('/bulk/reject', async (req, res, next) => {
+  try {
+    const parsed = bulkSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: parsed.error.errors[0]?.message ?? 'Invalid body' } });
+    }
+    const { items } = parsed.data;
+    const actorId = req.auth!.sub;
+
+    let updated = 0;
+    let skipped = 0;
+    const failed: Array<{ kind: string; id: string; error: string }> = [];
+
+    for (const item of items) {
+      try {
+        const transitioned = await rejectOne(item.kind, item.id);
+        if (transitioned) updated++;
+        else skipped++;
+      } catch (err: unknown) {
+        failed.push({ kind: item.kind, id: item.id, error: (err as Error).message ?? 'Unknown error' });
+      }
+    }
+
+    const kinds = [...new Set(items.map((i) => i.kind))];
+    const ids = items.map((i) => i.id);
+
+    await logAudit({
+      actorId,
+      action: 'moderation.bulk_reject',
+      metadata: { itemCount: items.length, updated, skipped, kinds, ids }
+    });
+
+    res.json({ success: true, data: { updated, skipped, failed } });
+  } catch (e) { next(e); }
+});
+
 // ---- POST /:kind/:id/approve --------------------------------------------
 
 router.post('/:kind/:id/approve', async (req, res, next) => {
@@ -331,29 +537,29 @@ router.post('/:kind/:id/approve', async (req, res, next) => {
       targetId: id
     });
 
+    await approveOne(kind, id);
+
+    // Re-fetch to return the updated row (approveOne doesn't return the row).
     let updated: unknown;
     switch (kind) {
       case 'opportunity':
-        updated = await prisma.opportunity.update({ where: { id }, data: { isApproved: true } });
+        updated = await prisma.opportunity.findUnique({ where: { id } });
         break;
       case 'scholarship':
-        updated = await prisma.scholarship.update({ where: { id }, data: { isApproved: true } });
+        updated = await prisma.scholarship.findUnique({ where: { id } });
         break;
       case 'learning_resource':
-        updated = await prisma.learningResource.update({ where: { id }, data: { isApproved: true } });
+        updated = await prisma.learningResource.findUnique({ where: { id } });
         break;
       case 'interview_question':
-        updated = await prisma.interviewQuestion.update({ where: { id }, data: { isApproved: true } });
+      case 'interview_question_flag':
+        updated = await prisma.interviewQuestion.findUnique({ where: { id } });
         break;
       case 'achievement':
-        updated = await prisma.achievement.update({ where: { id }, data: { isApproved: true } });
+        updated = await prisma.achievement.findUnique({ where: { id } });
         break;
       case 'portfolio':
-        updated = await prisma.portfolio.update({ where: { id }, data: { isPublished: true } });
-        break;
-      case 'interview_question_flag':
-        // Approving a flagged question = clearing the flags so it's visible again.
-        updated = await prisma.interviewQuestion.update({ where: { id }, data: { flagCount: 0 } });
+        updated = await prisma.portfolio.findUnique({ where: { id } });
         break;
     }
 
@@ -380,36 +586,9 @@ router.post('/:kind/:id/reject', async (req, res, next) => {
       targetId: id
     });
 
-    let result: unknown = { id };
-    switch (kind) {
-      case 'opportunity':
-        result = await prisma.opportunity.update({ where: { id }, data: { isActive: false } });
-        break;
-      case 'scholarship':
-        // Scholarship has no isActive flag — leaving isApproved=false IS the
-        // rejection. Re-write to make it explicit and update timestamp.
-        result = await prisma.scholarship.update({ where: { id }, data: { isApproved: false } });
-        break;
-      case 'learning_resource':
-        await prisma.learningResource.delete({ where: { id } });
-        break;
-      case 'interview_question':
-        await prisma.interviewQuestion.delete({ where: { id } });
-        break;
-      case 'achievement':
-        await prisma.achievement.delete({ where: { id } });
-        break;
-      case 'portfolio':
-        // Portfolios are owner-managed drafts — admin doesn't delete them on
-        // reject. No-op intentionally.
-        break;
-      case 'interview_question_flag':
-        // Reject = the flags were correct, take the question down.
-        await prisma.interviewQuestion.delete({ where: { id } });
-        break;
-    }
+    await rejectOne(kind, id);
 
-    res.json({ success: true, data: result });
+    res.json({ success: true, data: { id } });
   } catch (e) { next(e); }
 });
 
