@@ -7,6 +7,8 @@ export function ScholarshipCard({ item, index = 0 }: { item: Scholarship; index?
   const daysLeft = isRolling ? null : Math.ceil((new Date(item.deadline!).getTime() - Date.now()) / 86400000);
   const closingSoon = daysLeft !== null && daysLeft <= 14 && daysLeft >= 0;
   const closed = daysLeft !== null && daysLeft < 0;
+  const isIngested = item.source === 'INGESTED';
+  const sourceLabel = isIngested ? `via ${item.sourceName ?? 'aggregator'}` : null;
 
   return (
     <motion.div
@@ -29,11 +31,16 @@ export function ScholarshipCard({ item, index = 0 }: { item: Scholarship; index?
         <div className="mt-3 text-sm font-semibold text-[#F59E0B]">💰 {item.awardAmount}</div>
       )}
 
-      {item.source === 'INGESTED' && item.confidence != null && (
-        <div className="mt-2">
-          <span className="rounded-full bg-[var(--bg)] border border-[var(--border)] px-2 py-0.5 text-[10px] font-semibold text-[var(--muted)]">
-            AI confidence: {Math.round(item.confidence * 100)}%
-          </span>
+      {isIngested && (item.confidence != null || sourceLabel) && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {item.confidence != null && (
+            <span className="rounded-full bg-[var(--bg)] border border-[var(--border)] px-2 py-0.5 text-[10px] font-semibold text-[var(--muted)]">
+              AI confidence: {Math.round(item.confidence * 100)}%
+            </span>
+          )}
+          {sourceLabel && (
+            <span className="text-[11px] text-[var(--muted)] italic">{sourceLabel}</span>
+          )}
         </div>
       )}
 
