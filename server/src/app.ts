@@ -61,6 +61,7 @@ import adminSiteRoutes from './routes/adminSite.js';
 import adminSystemRoutes from './routes/adminSystem.js';
 import contentRoutes from './routes/content.js';
 import ingestRouter from './routes/ingest.js';
+import adminScholarshipsReviewRoutes from './routes/adminScholarshipsReview.js';
 import { UPLOAD_DIR } from './lib/upload.js';
 
 export function createApp() {
@@ -124,6 +125,7 @@ export function createApp() {
   app.use('/api/admin/ats-oversight', adminAtsOversightRoutes);
   app.use('/api/admin/site', adminSiteRoutes);
   app.use('/api/admin/system', adminSystemRoutes);
+  app.use('/api/admin/scholarships', adminScholarshipsReviewRoutes);
 
   app.use(errorHandler);
 
