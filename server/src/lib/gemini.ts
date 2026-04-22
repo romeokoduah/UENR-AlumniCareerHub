@@ -83,6 +83,13 @@ export async function isAiEnabled(): Promise<boolean> {
   return await readAiFeatureFlag();
 }
 
+// Public wrapper for the cv-match-ai-enabled SiteContent flag. The /cv-match
+// route layer uses this to gate the AI surface independently of which
+// provider (Groq / Gemini) is actually servicing requests.
+export async function isCvMatchFlagOn(): Promise<boolean> {
+  return await readAiFeatureFlag();
+}
+
 // ---- core call -----------------------------------------------------------
 
 function isTransient(err: unknown): boolean {

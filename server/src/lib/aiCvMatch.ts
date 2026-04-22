@@ -14,12 +14,14 @@
 //   4. aiSummary      — tailored 2-3 sentence summary in the requested
 //                       tone.
 //
-// Every function returns null when Gemini is unavailable / disabled —
+// Every function returns null when no AI provider is available / disabled —
 // the caller falls back to the deterministic engine. Each call goes
-// through `geminiJson` which handles caching, retries, timeouts, and
-// the feature-flag/env gating in one place. We never touch gemini.ts.
+// through `aiJson`, which tries Groq first (free-tier 14,400 req/day,
+// sub-second) and falls back to Gemini, handling retries / timeouts
+// / caching in one place. We never talk to a single provider directly
+// from here.
 
-import { geminiJson } from './gemini.js';
+import { aiJson } from './aiProvider.js';
 
 // ---- shared prompt preamble ---------------------------------------------
 
@@ -90,7 +92,8 @@ export type AiSummary = { summary: string };
 export type AiCallResult<T> = { data: T; tokensUsed: number; cached: boolean } | null;
 
 // ---- schemas ------------------------------------------------------------
-// Gemini's responseSchema is a JSON Schema subset (OpenAPI 3 style).
+// Gemini's responseSchema is a JSON Schema subset (OpenAPI 3 style); Groq's
+// Llama backend reads the same shape as a schema hint in the system prompt.
 // Keep them tight so the model can't pad fields with junk.
 
 const SENIORITY_ENUM = ['intern', 'junior', 'mid', 'senior', 'lead', 'principal'];
@@ -273,8 +276,8 @@ export async function aiExtract(
     `JD:\n${clip(jdText)}`
   ].filter(Boolean).join('\n');
 
-  const result = await geminiJson<Partial<AiExtraction>>(prompt, extractionSchema, {
-    maxOutputTokens: 1024,
+  const result = await aiJson<Partial<AiExtraction>>(prompt, extractionSchema, {
+    maxTokens: 1024,
     temperature: 0.3
   });
   if (!result) return null;
@@ -325,8 +328,8 @@ export async function aiScore(
     `JD:\n${clip(jdText)}`
   ].join('\n');
 
-  const result = await geminiJson<Partial<AiScoreResult>>(prompt, scoreSchema, {
-    maxOutputTokens: 1024,
+  const result = await aiJson<Partial<AiScoreResult>>(prompt, scoreSchema, {
+    maxTokens: 1024,
     temperature: 0.3
   });
   if (!result) return null;
@@ -388,8 +391,8 @@ export async function aiRefinements(
     `JD:\n${clip(jdText)}`
   ].join('\n');
 
-  const result = await geminiJson<{ refinements?: unknown }>(prompt, refinementsSchema, {
-    maxOutputTokens: 1024,
+  const result = await aiJson<{ refinements?: unknown }>(prompt, refinementsSchema, {
+    maxTokens: 1024,
     temperature: 0.5
   });
   if (!result) return null;
@@ -429,8 +432,8 @@ export async function aiSummary(
     `JD:\n${clip(jdText)}`
   ].join('\n');
 
-  const result = await geminiJson<Partial<AiSummary>>(prompt, summarySchema, {
-    maxOutputTokens: 1024,
+  const result = await aiJson<Partial<AiSummary>>(prompt, summarySchema, {
+    maxTokens: 1024,
     temperature: 0.5
   });
   if (!result) return null;

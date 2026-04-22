@@ -10,7 +10,7 @@
 //   GET    /runs/:id          auth — full persisted run, ownership-checked.
 //   DELETE /runs/:id          auth — delete a persisted run, ownership-checked.
 //
-//   ----- v2 AI surface (Gemini 2.0 Flash via lib/gemini) -----
+//   ----- v2 AI surface (Groq primary, Gemini failover via lib/aiProvider) -----
 //   GET    /ai/status         auth — { enabled: bool }. NOT rate-limited.
 //   POST   /ai/refinements    auth + aiLimiter — contextual refinement reasoning.
 //   POST   /ai/rewrite-bullet auth + aiLimiter — three rewritten bullets + rationale.
@@ -26,7 +26,8 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { runCvMatch, type MatchInput, type Refinement, type MatchResult } from '../lib/cvMatch.js';
-import { geminiJson, isAiEnabled } from '../lib/gemini.js';
+import { aiJson, isAnyProviderEnabled } from '../lib/aiProvider.js';
+import { isCvMatchFlagOn } from '../lib/gemini.js';
 import { logAudit } from '../lib/audit.js';
 import { checkAiQuota, noteAiCallUsed } from '../lib/aiQuota.js';
 import {
@@ -49,6 +50,15 @@ function notFound(res: Response, message = 'Not found') {
 
 function badRequest(res: Response, message: string, code = 'BAD_REQUEST') {
   return res.status(400).json({ success: false, error: { code, message } });
+}
+
+// "CV match AI is available" = at least one provider configured (Groq or
+// Gemini) AND the cv-match-ai-enabled SiteContent flag is on. Gate every
+// AI entry point on this so admins can kill the surface in one toggle
+// without caring which provider we happen to be on.
+async function isCvMatchAiEnabled(): Promise<boolean> {
+  if (!(await isAnyProviderEnabled())) return false;
+  return await isCvMatchFlagOn();
 }
 
 // ---- shared zod ----------------------------------------------------------
@@ -231,7 +241,7 @@ async function augmentWithAi(
 ): Promise<AugmentedMatchResult> {
   // Three short-circuit paths — each returns the deterministic baseline
   // plus an `aiSkipped` reason so the UI can render a tiny "AI off" badge.
-  if (!(await isAiEnabled())) {
+  if (!(await isCvMatchAiEnabled())) {
     return { ...baseline, aiSkipped: { reason: 'disabled' } };
   }
   const quota = await checkAiQuota(userId);
@@ -566,7 +576,7 @@ async function logAiActivity(
 
 router.get('/ai/status', requireAuth, async (_req, res, next) => {
   try {
-    const enabled = await isAiEnabled();
+    const enabled = await isCvMatchAiEnabled();
     res.json({ success: true, data: { enabled } });
   } catch (e) { next(e); }
 });
@@ -691,6 +701,10 @@ router.post('/ai/refinements', requireAuth, aiLimiter, async (req, res, next) =>
       return badRequest(res, 'Both CV and JD text are required to generate AI refinements.');
     }
 
+    if (!(await isCvMatchAiEnabled())) {
+      return res.json({ success: true, data: { enabled: false, refinements: [] } });
+    }
+
     // Per-user-per-day cap shared with /analyse + /runs + ATS. Fall
     // through to the same `{ enabled: false }` shape the missing-key
     // path returns so the client doesn't have to special-case quota.
@@ -703,10 +717,10 @@ router.post('/ai/refinements', requireAuth, aiLimiter, async (req, res, next) =>
     }
 
     const prompt = buildRefinementsPrompt(cvText, jdText, missingSkills, weakCoverage);
-    const result = await geminiJson<{ refinements: AiRefinement[] }>(
+    const result = await aiJson<{ refinements: AiRefinement[] }>(
       prompt,
       refinementSchemaShape,
-      { maxOutputTokens: 1024 }
+      { maxTokens: 1024 }
     );
 
     if (!result) {
@@ -778,6 +792,10 @@ router.post('/ai/rewrite-bullet', requireAuth, aiLimiter, async (req, res, next)
   try {
     const parsed = rewriteBodySchema.parse(req.body);
 
+    if (!(await isCvMatchAiEnabled())) {
+      return res.json({ success: true, data: { enabled: false } });
+    }
+
     const quota = await checkAiQuota(req.auth!.sub);
     if (!quota.allowed) {
       return res.json({ success: true, data: { enabled: false, reason: 'rate_limited' } });
@@ -799,10 +817,10 @@ router.post('/ai/rewrite-bullet', requireAuth, aiLimiter, async (req, res, next)
       `JD context:\n${clip(parsed.jd, 12_000)}`
     ].filter(Boolean).join('\n');
 
-    const result = await geminiJson<{ variants: string[]; rationale: string }>(
+    const result = await aiJson<{ variants: string[]; rationale: string }>(
       prompt,
       rewriteSchemaShape,
-      { maxOutputTokens: 768, temperature: 0.5 }
+      { maxTokens: 768, temperature: 0.5 }
     );
 
     if (!result) {
@@ -880,6 +898,10 @@ router.post('/ai/summary', requireAuth, aiLimiter, async (req, res, next) => {
       return badRequest(res, 'Both CV and JD text are required to generate a tailored summary.');
     }
 
+    if (!(await isCvMatchAiEnabled())) {
+      return res.json({ success: true, data: { enabled: false } });
+    }
+
     const quota = await checkAiQuota(req.auth!.sub);
     if (!quota.allowed) {
       return res.json({ success: true, data: { enabled: false, reason: 'rate_limited' } });
@@ -903,10 +925,10 @@ router.post('/ai/summary', requireAuth, aiLimiter, async (req, res, next) => {
       `JD:\n${clip(jdText, 12_000)}`
     ].join('\n');
 
-    const result = await geminiJson<{ summary: string }>(
+    const result = await aiJson<{ summary: string }>(
       prompt,
       summarySchemaShape,
-      { maxOutputTokens: 1024, temperature: 0.4 }
+      { maxTokens: 1024, temperature: 0.4 }
     );
 
     if (!result) {
