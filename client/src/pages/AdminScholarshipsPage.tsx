@@ -11,6 +11,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useBulkSelection } from '../hooks/useBulkSelection';
 import { Pagination } from '../components/ui/Pagination';
+import { buildCsv, downloadCsv } from '../utils/csv';
 
 type AdminScholarship = {
   id: string;
@@ -115,6 +116,23 @@ export default function AdminScholarshipsPage() {
     qc.invalidateQueries({ queryKey: ['scholarships'] });
   };
 
+  const exportCsv = () => {
+    const headers = ['id', 'title', 'provider', 'level', 'deadline', 'isApproved', 'isFeatured', 'status', 'source', 'createdAt'];
+    const rows = data.map((s) => ({
+      id: s.id,
+      title: s.title,
+      provider: s.provider,
+      level: s.level,
+      deadline: s.deadline ?? '',
+      isApproved: String(s.isApproved),
+      isFeatured: String(s.isFeatured),
+      status: s.status,
+      source: s.source,
+      createdAt: s.createdAt
+    }));
+    downloadCsv(`scholarships-${new Date().toISOString().slice(0, 10)}.csv`, buildCsv(headers, rows));
+  };
+
   const bulkAction = (action: string, label: string, confirmMsg?: string) => {
     if (selected.size === 0) return;
     if (confirmMsg && !confirm(confirmMsg)) return;
@@ -142,12 +160,21 @@ export default function AdminScholarshipsPage() {
           <h1 className="font-heading text-3xl font-extrabold">Manage Scholarships</h1>
           <p className="text-sm text-[var(--muted)]">All scholarships across the platform — edit, approve, feature, or remove.</p>
         </div>
-        <button
-          onClick={() => navigate('/scholarships/new')}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-[#065F46] px-4 py-2 text-sm font-semibold text-white hover:bg-[#064E3B]"
-        >
-          <PlusCircle size={15} /> Post scholarship
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportCsv}
+            disabled={data.length === 0}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-semibold hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40"
+          >
+            Export CSV
+          </button>
+          <button
+            onClick={() => navigate('/scholarships/new')}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-[#065F46] px-4 py-2 text-sm font-semibold text-white hover:bg-[#064E3B]"
+          >
+            <PlusCircle size={15} /> Post scholarship
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 mb-6">

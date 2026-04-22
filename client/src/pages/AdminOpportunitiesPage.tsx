@@ -12,6 +12,7 @@ import { api } from '../services/api';
 import type { Opportunity } from '../types';
 import { useBulkSelection } from '../hooks/useBulkSelection';
 import { Pagination } from '../components/ui/Pagination';
+import { buildCsv, downloadCsv } from '../utils/csv';
 
 type AdminOpportunity = Opportunity & {
   isActive: boolean;
@@ -110,6 +111,25 @@ export default function AdminOpportunitiesPage() {
     qc.invalidateQueries({ queryKey: ['opportunities'] });
   };
 
+  const exportCsv = () => {
+    const headers = ['id', 'title', 'company', 'type', 'location', 'locationType', 'deadline', 'isApproved', 'isActive', 'isFeatured', 'applications', 'createdAt'];
+    const rows = data.map((o) => ({
+      id: o.id,
+      title: o.title,
+      company: o.company,
+      type: o.type,
+      location: o.location,
+      locationType: o.locationType,
+      deadline: o.deadline,
+      isApproved: String((o as any).isApproved),
+      isActive: String((o as any).isActive),
+      isFeatured: String((o as any).isFeatured ?? false),
+      applications: String(o._count?.applications ?? 0),
+      createdAt: o.createdAt
+    }));
+    downloadCsv(`opportunities-${new Date().toISOString().slice(0, 10)}.csv`, buildCsv(headers, rows));
+  };
+
   const bulkAction = (action: string, label: string, confirmMsg?: string) => {
     if (selected.size === 0) return;
     if (confirmMsg && !confirm(confirmMsg)) return;
@@ -137,12 +157,21 @@ export default function AdminOpportunitiesPage() {
           <h1 className="font-heading text-3xl font-extrabold">Opportunities editor</h1>
           <p className="text-sm text-[var(--muted)]">Every job, internship, and service placement across the platform — edit, approve, or remove.</p>
         </div>
-        <button
-          onClick={() => navigate('/opportunities/new')}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-[#065F46] px-4 py-2 text-sm font-semibold text-white hover:bg-[#064E3B]"
-        >
-          <PlusCircle size={15} /> Post opportunity
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportCsv}
+            disabled={data.length === 0}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-semibold hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40"
+          >
+            Export CSV
+          </button>
+          <button
+            onClick={() => navigate('/opportunities/new')}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-[#065F46] px-4 py-2 text-sm font-semibold text-white hover:bg-[#064E3B]"
+          >
+            <PlusCircle size={15} /> Post opportunity
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5 mb-6">
