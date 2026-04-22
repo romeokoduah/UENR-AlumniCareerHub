@@ -108,6 +108,72 @@ router.post('/bulk/delete', validate(bulkSchema), async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// POST /api/admin/scholarships/bulk-create
+// Bulk-create scholarships from CSV import. Published immediately.
+const bulkCreateScholarshipItemSchema = z.object({
+  title: z.string().min(3),
+  provider: z.string().min(1),
+  description: z.string().min(20),
+  eligibility: z.string().min(5),
+  deadline: z.string().nullable().optional(),
+  awardAmount: z.string().nullable().optional(),
+  applicationUrl: z.string().url(),
+  level: z.enum(['UNDERGRAD', 'MASTERS', 'PHD', 'POSTDOC', 'OTHER']),
+  fieldOfStudy: z.string().nullable().optional(),
+  location: z.string().nullable().optional(),
+  tags: z.array(z.string()).optional()
+});
+
+const bulkCreateScholarshipsSchema = z.object({
+  items: z.array(z.record(z.unknown())).min(1).max(500)
+});
+
+router.post('/bulk-create', validate(bulkCreateScholarshipsSchema), async (req, res, next) => {
+  try {
+    const { items } = req.body as { items: Record<string, unknown>[] };
+    const submittedById = req.auth!.sub;
+    const rejected: Array<{ row: number; error: string }> = [];
+    const toCreate: z.infer<typeof bulkCreateScholarshipItemSchema>[] = [];
+
+    for (let i = 0; i < items.length; i++) {
+      const parsed = bulkCreateScholarshipItemSchema.safeParse(items[i]);
+      if (!parsed.success) {
+        rejected.push({ row: i + 1, error: parsed.error.issues.map((e) => e.message).join('; ') });
+      } else {
+        toCreate.push(parsed.data);
+      }
+    }
+
+    await prisma.scholarship.createMany({
+      data: toCreate.map((item) => ({
+        title: item.title,
+        provider: item.provider,
+        description: item.description,
+        eligibility: item.eligibility,
+        deadline: item.deadline ? new Date(item.deadline) : null,
+        awardAmount: item.awardAmount ?? null,
+        applicationUrl: item.applicationUrl,
+        level: item.level,
+        fieldOfStudy: item.fieldOfStudy ?? null,
+        location: item.location ?? null,
+        tags: item.tags ?? [],
+        source: 'ADMIN',
+        status: 'PUBLISHED',
+        isApproved: true,
+        submittedById
+      }))
+    });
+
+    await logAudit({
+      actorId: submittedById,
+      action: 'scholarship.bulk_create',
+      metadata: { created: toCreate.length, rejected: rejected.length }
+    });
+
+    res.status(201).json({ success: true, data: { created: toCreate.length, rejected } });
+  } catch (e) { next(e); }
+});
+
 // POST /api/admin/scholarships/bulk/approve
 // Bulk-approve up to 100 PENDING_REVIEW scholarships in one DB round trip.
 router.post('/bulk/approve', validate(bulkSchema), async (req, res, next) => {

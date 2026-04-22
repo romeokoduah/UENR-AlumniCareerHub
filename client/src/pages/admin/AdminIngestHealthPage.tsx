@@ -4,8 +4,14 @@
 
 import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Activity, CheckCircle2, XCircle, Clock, Play, Link2, Scan, Plus, X as XIcon, Upload } from 'lucide-react';
+import { Activity, CheckCircle2, XCircle, Clock, Play, Link2, Scan, Plus, X as XIcon, Upload, Download } from 'lucide-react';
 import { api } from '../../services/api';
+import { downloadBlob } from '../../utils/csv';
+
+const CANDIDATE_URLS_TEMPLATE = `url,kind,label
+https://example.com/scholarships/feed/,scholarship,Example Scholarships
+https://example.com/jobs/feed/,job,Example Jobs
+`;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -49,6 +55,8 @@ type IngestStatsData = {
 };
 
 type AdhocResult = {
+  crawled?: number;
+  pagesVisited?: string[];
   itemsFound: number;
   itemsPublished: number;
   itemsQueued: number;
@@ -162,6 +170,7 @@ function AdhocIngestCard() {
   const [kind, setKind] = useState<'scholarship' | 'job'>('scholarship');
   const [result, setResult] = useState<AdhocResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [pagesExpanded, setPagesExpanded] = useState(false);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -238,7 +247,27 @@ function AdhocIngestCard() {
       )}
 
       {result && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 dark:border-emerald-800 dark:bg-emerald-950/20">
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 dark:border-emerald-800 dark:bg-emerald-950/20 space-y-2">
+          {result.crawled !== undefined && (
+            <p className="text-xs text-[var(--muted)]">
+              Crawled <span className="font-semibold text-[var(--fg)]">{result.crawled}</span> page{result.crawled !== 1 ? 's' : ''}
+              {result.pagesVisited && result.pagesVisited.length > 0 && (
+                <button
+                  onClick={() => setPagesExpanded((v) => !v)}
+                  className="ml-2 underline text-[11px]"
+                >
+                  {pagesExpanded ? 'hide' : 'show pages'}
+                </button>
+              )}
+            </p>
+          )}
+          {pagesExpanded && result.pagesVisited && result.pagesVisited.length > 0 && (
+            <ul className="text-[11px] text-[var(--muted)] space-y-0.5 max-h-40 overflow-y-auto">
+              {result.pagesVisited.map((p, i) => (
+                <li key={i} className="truncate font-mono">{p}</li>
+              ))}
+            </ul>
+          )}
           {result.itemsFound === 0 ? (
             <p className="text-sm text-[var(--muted)]">{result.message ?? 'No items found.'}</p>
           ) : (
@@ -530,6 +559,12 @@ function CandidateUrlsCard() {
               onChange={(e) => { const f = e.target.files?.[0]; if (f) handleCsvFile(f); }}
             />
           </label>
+          <button
+            onClick={() => downloadBlob('candidate-urls-template.csv', CANDIDATE_URLS_TEMPLATE)}
+            className="inline-flex items-center gap-1 text-xs text-[var(--muted)] hover:text-[var(--fg)]"
+          >
+            <Download size={12} /> Download template
+          </button>
           <span className="text-xs text-[var(--muted)]">Columns: <code>url,kind,label</code> (kind must be <em>scholarship</em> or <em>job</em>)</span>
         </div>
 

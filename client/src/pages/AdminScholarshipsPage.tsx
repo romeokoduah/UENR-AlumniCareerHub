@@ -1,17 +1,78 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
   Search, Pencil, Trash2, CheckCircle2,
   ArrowLeft, X, Save, Clock, GraduationCap,
-  CheckSquare, Star, PlusCircle
+  CheckSquare, Star, PlusCircle, Upload, Download
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useBulkSelection } from '../hooks/useBulkSelection';
 import { Pagination } from '../components/ui/Pagination';
-import { buildCsv, downloadCsv } from '../utils/csv';
+import { buildCsv, downloadCsv, parseCsv, downloadBlob } from '../utils/csv';
+
+const SCH_TEMPLATE_CSV = `title,provider,description,eligibility,deadline,awardAmount,applicationUrl,level,fieldOfStudy,location,tags
+"DAAD Masters","DAAD","Full funding for...","Ghanaian citizen...","2027-04-30","EUR 1500/month stipend","https://apply.daad.de","MASTERS","Engineering","Germany","masters;engineering;africa"
+`;
+
+type ParsedSchRow = {
+  title: string;
+  provider: string;
+  description: string;
+  eligibility: string;
+  deadline: string | null;
+  awardAmount: string | null;
+  applicationUrl: string;
+  level: 'UNDERGRAD' | 'MASTERS' | 'PHD' | 'POSTDOC' | 'OTHER';
+  fieldOfStudy: string | null;
+  location: string | null;
+  tags: string[];
+};
+
+type ImportPreview = {
+  valid: ParsedSchRow[];
+  invalid: Array<{ row: number; reason: string }>;
+};
+
+const VALID_LEVELS = new Set(['UNDERGRAD', 'MASTERS', 'PHD', 'POSTDOC', 'OTHER']);
+
+function parseSchCsvRows(raw: Record<string, string>[]): ImportPreview {
+  const valid: ParsedSchRow[] = [];
+  const invalid: Array<{ row: number; reason: string }> = [];
+
+  raw.forEach((row, idx) => {
+    const rowNum = idx + 2;
+    const errors: string[] = [];
+    const level = row.level?.toUpperCase() ?? '';
+
+    if (!row.title?.trim()) errors.push('title required');
+    if (!row.provider?.trim()) errors.push('provider required');
+    if (!row.description || row.description.trim().length < 20) errors.push('description must be ≥20 chars');
+    if (!row.eligibility || row.eligibility.trim().length < 5) errors.push('eligibility must be ≥5 chars');
+    if (!row.applicationurl?.trim()) errors.push('applicationUrl required');
+    if (!VALID_LEVELS.has(level)) errors.push(`level must be UNDERGRAD|MASTERS|PHD|POSTDOC|OTHER`);
+
+    if (errors.length) { invalid.push({ row: rowNum, reason: errors.join('; ') }); return; }
+
+    valid.push({
+      title: row.title.trim(),
+      provider: row.provider.trim(),
+      description: row.description.trim(),
+      eligibility: row.eligibility.trim(),
+      deadline: row.deadline?.trim() || null,
+      awardAmount: row.awardamount?.trim() || null,
+      applicationUrl: row.applicationurl.trim(),
+      level: level as ParsedSchRow['level'],
+      fieldOfStudy: row.fieldofstudy?.trim() || null,
+      location: row.location?.trim() || null,
+      tags: row.tags ? row.tags.split(';').map((t) => t.trim()).filter(Boolean) : []
+    });
+  });
+
+  return { valid, invalid };
+}
 
 type AdminScholarship = {
   id: string;
@@ -51,6 +112,9 @@ export default function AdminScholarshipsPage() {
   const [status, setStatus] = useState<StatusFilter>('all');
   const [editing, setEditing] = useState<AdminScholarship | null>(null);
   const [page, setPage] = useState(1);
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const PAGE_SIZE = 20;
 
   const { data = [], isLoading } = useQuery<AdminScholarship[]>({
@@ -116,6 +180,34 @@ export default function AdminScholarshipsPage() {
     qc.invalidateQueries({ queryKey: ['scholarships'] });
   };
 
+  const handleCsvImport = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      const rows = parseCsv(text);
+      setImportPreview(parseSchCsvRows(rows));
+    };
+    reader.readAsText(file);
+  };
+
+  const submitImport = async () => {
+    if (!importPreview?.valid.length) return;
+    setImporting(true);
+    try {
+      const res = await api.post('/admin/scholarships/bulk-create', { items: importPreview.valid });
+      const { created, rejected } = res.data.data;
+      toast.success(`Imported ${created} scholarship${created !== 1 ? 's' : ''}${rejected.length ? `, ${rejected.length} failed` : ''}`);
+      setImportPreview(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      qc.invalidateQueries({ queryKey: ['admin', 'scholarships'] });
+      qc.invalidateQueries({ queryKey: ['scholarships'] });
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message ?? 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const exportCsv = () => {
     const headers = ['id', 'title', 'provider', 'level', 'deadline', 'isApproved', 'isFeatured', 'status', 'source', 'createdAt'];
     const rows = data.map((s) => ({
@@ -160,7 +252,7 @@ export default function AdminScholarshipsPage() {
           <h1 className="font-heading text-3xl font-extrabold">Manage Scholarships</h1>
           <p className="text-sm text-[var(--muted)]">All scholarships across the platform — edit, approve, feature, or remove.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={exportCsv}
             disabled={data.length === 0}
@@ -168,6 +260,24 @@ export default function AdminScholarshipsPage() {
           >
             Export CSV
           </button>
+          <div className="flex flex-col items-start gap-0.5">
+            <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-semibold hover:bg-black/5 dark:hover:bg-white/5">
+              <Upload size={14} /> Import CSV
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv"
+                className="sr-only"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleCsvImport(f); }}
+              />
+            </label>
+            <button
+              onClick={() => downloadBlob('scholarships-template.csv', SCH_TEMPLATE_CSV)}
+              className="inline-flex items-center gap-1 px-4 text-[11px] text-[var(--muted)] hover:text-[var(--fg)]"
+            >
+              <Download size={11} /> Download template
+            </button>
+          </div>
           <button
             onClick={() => navigate('/scholarships/new')}
             className="inline-flex items-center gap-1.5 rounded-lg bg-[#065F46] px-4 py-2 text-sm font-semibold text-white hover:bg-[#064E3B]"
@@ -281,6 +391,51 @@ export default function AdminScholarshipsPage() {
               setEditing(null);
             }}
           />
+        )}
+        {importPreview && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            onClick={(e) => e.target === e.currentTarget && setImportPreview(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.97 }}
+              transition={{ type: 'spring', stiffness: 280, damping: 26 }}
+              className="w-full max-w-lg rounded-3xl border border-[var(--border)] bg-[var(--card)] shadow-2xl p-6 space-y-4"
+            >
+              <div className="flex items-center justify-between">
+                <h2 className="font-heading text-xl font-bold">CSV Import Preview</h2>
+                <button onClick={() => setImportPreview(null)} className="rounded-lg p-2 hover:bg-black/5 dark:hover:bg-white/5"><X size={16} /></button>
+              </div>
+              <p className="text-sm">
+                <span className="font-semibold text-[#065F46]">{importPreview.valid.length} valid row{importPreview.valid.length !== 1 ? 's' : ''}</span>
+                {importPreview.invalid.length > 0 && (
+                  <span className="ml-2 text-rose-500">{importPreview.invalid.length} invalid</span>
+                )}
+              </p>
+              {importPreview.invalid.length > 0 && (
+                <ul className="text-xs text-rose-500 space-y-0.5 max-h-32 overflow-y-auto">
+                  {importPreview.invalid.map((e) => <li key={e.row}>Row {e.row}: {e.reason}</li>)}
+                </ul>
+              )}
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button onClick={() => setImportPreview(null)} className="btn-ghost text-sm">Cancel</button>
+                {importPreview.valid.length > 0 && (
+                  <button
+                    disabled={importing}
+                    onClick={submitImport}
+                    className="btn-primary"
+                  >
+                    {importing ? 'Importing…' : `Import ${importPreview.valid.length}`}
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

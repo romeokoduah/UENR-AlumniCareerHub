@@ -161,6 +161,89 @@ router.post('/bulk/delete', validate(bulkSchema), async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// POST /api/admin/opportunities/bulk-create
+// Bulk-create opportunities from CSV import. Each item goes live immediately
+// (status=PUBLISHED, isApproved=true, isActive=true) since the admin has
+// already reviewed the source data before uploading.
+const bulkCreateOpportunityItemSchema = z.object({
+  title: z.string().min(3),
+  description: z.string().min(20),
+  company: z.string().min(1),
+  location: z.string().min(1),
+  locationType: z.enum(['REMOTE', 'ONSITE', 'HYBRID']),
+  type: z.enum(['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERNSHIP', 'VOLUNTEER', 'NATIONAL_SERVICE']),
+  salaryMin: z.number().int().nullable().optional(),
+  salaryMax: z.number().int().nullable().optional(),
+  currency: z.string().optional(),
+  deadline: z.string().nullable().optional(),
+  applicationUrl: z.string().url().nullable().optional(),
+  requiredSkills: z.array(z.string()).optional(),
+  preferredSkills: z.array(z.string()).optional(),
+  industry: z.string().nullable().optional(),
+  experienceLevel: z.string().nullable().optional()
+});
+
+// Outer schema accepts raw items without strict per-row validation so that
+// partial-failure batches (some valid, some invalid) don't fail the whole
+// request. Per-row validation is done inside the handler using
+// bulkCreateOpportunityItemSchema.safeParse().
+const bulkCreateOpportunitiesSchema = z.object({
+  items: z.array(z.record(z.unknown())).min(1).max(500)
+});
+
+router.post('/bulk-create', validate(bulkCreateOpportunitiesSchema), async (req, res, next) => {
+  try {
+    const { items } = req.body as { items: Record<string, unknown>[] };
+    const postedById = req.auth!.sub;
+    const rejected: Array<{ row: number; error: string }> = [];
+    const toCreate: z.infer<typeof bulkCreateOpportunityItemSchema>[] = [];
+
+    for (let i = 0; i < items.length; i++) {
+      const parsed = bulkCreateOpportunityItemSchema.safeParse(items[i]);
+      if (!parsed.success) {
+        rejected.push({ row: i + 1, error: parsed.error.issues.map((e) => e.message).join('; ') });
+      } else {
+        toCreate.push(parsed.data);
+      }
+    }
+
+    // createMany doesn't support connectOrCreate / relations, so we skip the
+    // postedBy relation and just store the FK directly.
+    await prisma.opportunity.createMany({
+      data: toCreate.map((item) => ({
+        title: item.title,
+        description: item.description,
+        company: item.company,
+        location: item.location,
+        locationType: item.locationType,
+        type: item.type,
+        salaryMin: item.salaryMin ?? null,
+        salaryMax: item.salaryMax ?? null,
+        currency: item.currency ?? 'GHS',
+        deadline: item.deadline ? new Date(item.deadline) : null,
+        applicationUrl: item.applicationUrl ?? null,
+        requiredSkills: item.requiredSkills ?? [],
+        preferredSkills: item.preferredSkills ?? [],
+        industry: item.industry ?? null,
+        experienceLevel: item.experienceLevel ?? null,
+        source: 'ADMIN',
+        status: 'PUBLISHED',
+        isApproved: true,
+        isActive: true,
+        postedById
+      }))
+    });
+
+    await logAudit({
+      actorId: postedById,
+      action: 'opportunity.bulk_create',
+      metadata: { created: toCreate.length, rejected: rejected.length }
+    });
+
+    res.status(201).json({ success: true, data: { created: toCreate.length, rejected } });
+  } catch (e) { next(e); }
+});
+
 // POST /api/admin/opportunities/:id/approve
 // Publish the opportunity: status=PUBLISHED, isApproved=true.
 router.post('/:id/approve', async (req, res, next) => {
