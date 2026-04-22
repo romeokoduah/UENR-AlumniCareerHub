@@ -62,6 +62,7 @@ import adminSystemRoutes from './routes/adminSystem.js';
 import contentRoutes from './routes/content.js';
 import ingestRouter from './routes/ingest.js';
 import adminScholarshipsReviewRoutes from './routes/adminScholarshipsReview.js';
+import adminOpportunitiesReviewRoutes from './routes/adminOpportunitiesReview.js';
 import { UPLOAD_DIR } from './lib/upload.js';
 
 export function createApp() {
@@ -126,6 +127,7 @@ export function createApp() {
   app.use('/api/admin/site', adminSiteRoutes);
   app.use('/api/admin/system', adminSystemRoutes);
   app.use('/api/admin/scholarships', adminScholarshipsReviewRoutes);
+  app.use('/api/admin/opportunities', adminOpportunitiesReviewRoutes);
 
   app.use(errorHandler);
 
