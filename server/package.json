@@ -44,8 +44,10 @@
     "@types/nodemailer": "^6.4.16",
     "@types/pdf-parse": "^1.1.4",
     "@types/sanitize-html": "^2.16.1",
+    "@types/supertest": "^7.2.0",
     "@types/ws": "^8.5.13",
     "prisma": "^5.22.0",
+    "supertest": "^7.2.2",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   }

@@ -60,6 +60,7 @@ import adminAtsOversightRoutes from './routes/adminAtsOversight.js';
 import adminSiteRoutes from './routes/adminSite.js';
 import adminSystemRoutes from './routes/adminSystem.js';
 import contentRoutes from './routes/content.js';
+import ingestRouter from './routes/ingest.js';
 import { UPLOAD_DIR } from './lib/upload.js';
 
 export function createApp() {
@@ -114,6 +115,7 @@ export function createApp() {
   app.use('/api/cv-match/upload', cvMatchUploadRoutes);
   app.use('/api/cv-match', cvMatchRoutes);
   app.use('/api/content', contentRoutes);
+  app.use('/api/ingest', ingestRouter);
   app.use('/api/admin', adminRoutes);
   app.use('/api/admin/moderation', adminModerationRoutes);
   app.use('/api/admin/insights', adminInsightsRoutes);
