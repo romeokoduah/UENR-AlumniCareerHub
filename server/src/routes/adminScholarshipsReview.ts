@@ -29,6 +29,39 @@ router.get('/pending', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Shared schema for bulk operations — must be declared before /:id routes so
+// that /bulk/approve and /bulk/reject are matched before Express tries to
+// interpret "bulk" as an :id param.
+const bulkSchema = z.object({
+  ids: z.array(z.string()).min(1, 'ids must not be empty').max(100, 'ids must not exceed 100')
+});
+
+// POST /api/admin/scholarships/bulk/approve
+// Bulk-approve up to 100 PENDING_REVIEW scholarships in one DB round trip.
+router.post('/bulk/approve', validate(bulkSchema), async (req, res, next) => {
+  try {
+    const { ids } = req.body as z.infer<typeof bulkSchema>;
+    const result = await prisma.scholarship.updateMany({
+      where: { id: { in: ids }, status: 'PENDING_REVIEW' },
+      data: { status: 'PUBLISHED', isApproved: true }
+    });
+    res.json({ success: true, data: { updated: result.count, requested: ids.length } });
+  } catch (e) { next(e); }
+});
+
+// POST /api/admin/scholarships/bulk/reject
+// Bulk-reject up to 100 PENDING_REVIEW scholarships in one DB round trip.
+router.post('/bulk/reject', validate(bulkSchema), async (req, res, next) => {
+  try {
+    const { ids } = req.body as z.infer<typeof bulkSchema>;
+    const result = await prisma.scholarship.updateMany({
+      where: { id: { in: ids }, status: 'PENDING_REVIEW' },
+      data: { status: 'REJECTED', isApproved: false }
+    });
+    res.json({ success: true, data: { updated: result.count, requested: ids.length } });
+  } catch (e) { next(e); }
+});
+
 // POST /api/admin/scholarships/:id/approve
 // Publish the scholarship: status=PUBLISHED, isApproved=true.
 router.post('/:id/approve', async (req, res, next) => {

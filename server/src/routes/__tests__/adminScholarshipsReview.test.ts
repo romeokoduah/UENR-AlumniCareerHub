@@ -197,4 +197,112 @@ const TAG = '_admin-review-test';
       .send({ applicationUrl: 'not-a-url' });
     expect(res.status).toBe(400);
   });
+
+  // ---- POST /bulk/approve --------------------------------------------------
+
+  it('POST /api/admin/scholarships/bulk/approve returns 401 without token', async () => {
+    const res = await request(app)
+      .post('/api/admin/scholarships/bulk/approve')
+      .send({ ids: ['some-id'] });
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /api/admin/scholarships/bulk/approve returns 400 on empty ids array', async () => {
+    const res = await request(app)
+      .post('/api/admin/scholarships/bulk/approve')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ ids: [] });
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /api/admin/scholarships/bulk/approve approves only selected PENDING_REVIEW rows', async () => {
+    const future = new Date(Date.now() + 86_400_000);
+    const [r1, r2, r3] = await Promise.all([
+      prisma.scholarship.create({ data: { ...base, title: 'Bulk Approve 1', source: 'INGESTED', status: 'PENDING_REVIEW', isApproved: false, deadline: future } }),
+      prisma.scholarship.create({ data: { ...base, title: 'Bulk Approve 2', source: 'INGESTED', status: 'PENDING_REVIEW', isApproved: false, deadline: future } }),
+      prisma.scholarship.create({ data: { ...base, title: 'Bulk Approve 3', source: 'INGESTED', status: 'PENDING_REVIEW', isApproved: false, deadline: future } }),
+    ]);
+
+    const res = await request(app)
+      .post('/api/admin/scholarships/bulk/approve')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ ids: [r1.id, r2.id] });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.updated).toBe(2);
+    expect(res.body.data.requested).toBe(2);
+
+    const [updated1, updated2, untouched] = await Promise.all([
+      prisma.scholarship.findUnique({ where: { id: r1.id } }),
+      prisma.scholarship.findUnique({ where: { id: r2.id } }),
+      prisma.scholarship.findUnique({ where: { id: r3.id } }),
+    ]);
+    expect(updated1?.status).toBe('PUBLISHED');
+    expect(updated1?.isApproved).toBe(true);
+    expect(updated2?.status).toBe('PUBLISHED');
+    expect(updated2?.isApproved).toBe(true);
+    expect(untouched?.status).toBe('PENDING_REVIEW');
+  });
+
+  it('POST /api/admin/scholarships/bulk/approve stale id (already PUBLISHED) counts only actually-transitioned rows', async () => {
+    const future = new Date(Date.now() + 86_400_000);
+    const [pending, alreadyPublished] = await Promise.all([
+      prisma.scholarship.create({ data: { ...base, title: 'Stale Test Pending', source: 'INGESTED', status: 'PENDING_REVIEW', isApproved: false, deadline: future } }),
+      prisma.scholarship.create({ data: { ...base, title: 'Stale Test Published', source: 'INGESTED', status: 'PUBLISHED', isApproved: true, deadline: future } }),
+    ]);
+
+    const res = await request(app)
+      .post('/api/admin/scholarships/bulk/approve')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ ids: [pending.id, alreadyPublished.id] });
+    expect(res.status).toBe(200);
+    expect(res.body.data.updated).toBe(1);
+    expect(res.body.data.requested).toBe(2);
+  });
+
+  // ---- POST /bulk/reject ---------------------------------------------------
+
+  it('POST /api/admin/scholarships/bulk/reject returns 401 without token', async () => {
+    const res = await request(app)
+      .post('/api/admin/scholarships/bulk/reject')
+      .send({ ids: ['some-id'] });
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /api/admin/scholarships/bulk/reject returns 400 on empty ids array', async () => {
+    const res = await request(app)
+      .post('/api/admin/scholarships/bulk/reject')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ ids: [] });
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /api/admin/scholarships/bulk/reject rejects only selected PENDING_REVIEW rows', async () => {
+    const future = new Date(Date.now() + 86_400_000);
+    const [r1, r2, r3] = await Promise.all([
+      prisma.scholarship.create({ data: { ...base, title: 'Bulk Reject 1', source: 'INGESTED', status: 'PENDING_REVIEW', isApproved: false, deadline: future } }),
+      prisma.scholarship.create({ data: { ...base, title: 'Bulk Reject 2', source: 'INGESTED', status: 'PENDING_REVIEW', isApproved: false, deadline: future } }),
+      prisma.scholarship.create({ data: { ...base, title: 'Bulk Reject 3', source: 'INGESTED', status: 'PENDING_REVIEW', isApproved: false, deadline: future } }),
+    ]);
+
+    const res = await request(app)
+      .post('/api/admin/scholarships/bulk/reject')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ ids: [r1.id, r2.id] });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.updated).toBe(2);
+    expect(res.body.data.requested).toBe(2);
+
+    const [updated1, updated2, untouched] = await Promise.all([
+      prisma.scholarship.findUnique({ where: { id: r1.id } }),
+      prisma.scholarship.findUnique({ where: { id: r2.id } }),
+      prisma.scholarship.findUnique({ where: { id: r3.id } }),
+    ]);
+    expect(updated1?.status).toBe('REJECTED');
+    expect(updated1?.isApproved).toBe(false);
+    expect(updated2?.status).toBe('REJECTED');
+    expect(updated2?.isApproved).toBe(false);
+    expect(untouched?.status).toBe('PENDING_REVIEW');
+  });
 });

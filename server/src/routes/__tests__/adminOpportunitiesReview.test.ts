@@ -200,4 +200,109 @@ const TAG = '_admin-opp-review-test';
       .send({ applicationUrl: 'not-a-url' });
     expect(res.status).toBe(400);
   });
+
+  // ---- POST /bulk/approve --------------------------------------------------
+
+  it('POST /api/admin/opportunities/bulk/approve returns 401 without token', async () => {
+    const res = await request(app)
+      .post('/api/admin/opportunities/bulk/approve')
+      .send({ ids: ['some-id'] });
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /api/admin/opportunities/bulk/approve returns 400 on empty ids array', async () => {
+    const res = await request(app)
+      .post('/api/admin/opportunities/bulk/approve')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ ids: [] });
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /api/admin/opportunities/bulk/approve approves only selected PENDING_REVIEW rows', async () => {
+    const [r1, r2, r3] = await Promise.all([
+      prisma.opportunity.create({ data: { ...base, title: 'Bulk Approve Job 1' } }),
+      prisma.opportunity.create({ data: { ...base, title: 'Bulk Approve Job 2' } }),
+      prisma.opportunity.create({ data: { ...base, title: 'Bulk Approve Job 3' } }),
+    ]);
+
+    const res = await request(app)
+      .post('/api/admin/opportunities/bulk/approve')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ ids: [r1.id, r2.id] });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.updated).toBe(2);
+    expect(res.body.data.requested).toBe(2);
+
+    const [updated1, updated2, untouched] = await Promise.all([
+      prisma.opportunity.findUnique({ where: { id: r1.id } }),
+      prisma.opportunity.findUnique({ where: { id: r2.id } }),
+      prisma.opportunity.findUnique({ where: { id: r3.id } }),
+    ]);
+    expect(updated1?.status).toBe('PUBLISHED');
+    expect(updated1?.isApproved).toBe(true);
+    expect(updated2?.status).toBe('PUBLISHED');
+    expect(updated2?.isApproved).toBe(true);
+    expect(untouched?.status).toBe('PENDING_REVIEW');
+  });
+
+  it('POST /api/admin/opportunities/bulk/approve stale id (already PUBLISHED) counts only actually-transitioned rows', async () => {
+    const [pending, alreadyPublished] = await Promise.all([
+      prisma.opportunity.create({ data: { ...base, title: 'Stale Test Pending Job' } }),
+      prisma.opportunity.create({ data: { ...base, title: 'Stale Test Published Job', status: 'PUBLISHED', isApproved: true } }),
+    ]);
+
+    const res = await request(app)
+      .post('/api/admin/opportunities/bulk/approve')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ ids: [pending.id, alreadyPublished.id] });
+    expect(res.status).toBe(200);
+    expect(res.body.data.updated).toBe(1);
+    expect(res.body.data.requested).toBe(2);
+  });
+
+  // ---- POST /bulk/reject ---------------------------------------------------
+
+  it('POST /api/admin/opportunities/bulk/reject returns 401 without token', async () => {
+    const res = await request(app)
+      .post('/api/admin/opportunities/bulk/reject')
+      .send({ ids: ['some-id'] });
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /api/admin/opportunities/bulk/reject returns 400 on empty ids array', async () => {
+    const res = await request(app)
+      .post('/api/admin/opportunities/bulk/reject')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ ids: [] });
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /api/admin/opportunities/bulk/reject rejects only selected PENDING_REVIEW rows', async () => {
+    const [r1, r2, r3] = await Promise.all([
+      prisma.opportunity.create({ data: { ...base, title: 'Bulk Reject Job 1' } }),
+      prisma.opportunity.create({ data: { ...base, title: 'Bulk Reject Job 2' } }),
+      prisma.opportunity.create({ data: { ...base, title: 'Bulk Reject Job 3' } }),
+    ]);
+
+    const res = await request(app)
+      .post('/api/admin/opportunities/bulk/reject')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ ids: [r1.id, r2.id] });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.updated).toBe(2);
+    expect(res.body.data.requested).toBe(2);
+
+    const [updated1, updated2, untouched] = await Promise.all([
+      prisma.opportunity.findUnique({ where: { id: r1.id } }),
+      prisma.opportunity.findUnique({ where: { id: r2.id } }),
+      prisma.opportunity.findUnique({ where: { id: r3.id } }),
+    ]);
+    expect(updated1?.status).toBe('REJECTED');
+    expect(updated1?.isApproved).toBe(false);
+    expect(updated2?.status).toBe('REJECTED');
+    expect(updated2?.isApproved).toBe(false);
+    expect(untouched?.status).toBe('PENDING_REVIEW');
+  });
 });
