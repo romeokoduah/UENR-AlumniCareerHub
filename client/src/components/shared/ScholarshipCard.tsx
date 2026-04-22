@@ -3,9 +3,10 @@ import { ExternalLink, Clock } from 'lucide-react';
 import type { Scholarship } from '../../types';
 
 export function ScholarshipCard({ item, index = 0 }: { item: Scholarship; index?: number }) {
-  const daysLeft = Math.ceil((new Date(item.deadline).getTime() - Date.now()) / 86400000);
-  const closingSoon = daysLeft <= 14 && daysLeft >= 0;
-  const closed = daysLeft < 0;
+  const isRolling = !item.deadline;
+  const daysLeft = isRolling ? null : Math.ceil((new Date(item.deadline!).getTime() - Date.now()) / 86400000);
+  const closingSoon = daysLeft !== null && daysLeft <= 14 && daysLeft >= 0;
+  const closed = daysLeft !== null && daysLeft < 0;
 
   return (
     <motion.div
@@ -28,11 +29,20 @@ export function ScholarshipCard({ item, index = 0 }: { item: Scholarship; index?
         <div className="mt-3 text-sm font-semibold text-[#F59E0B]">💰 {item.awardAmount}</div>
       )}
 
+      {item.source === 'INGESTED' && item.confidence != null && (
+        <div className="mt-2">
+          <span className="rounded-full bg-[var(--bg)] border border-[var(--border)] px-2 py-0.5 text-[10px] font-semibold text-[var(--muted)]">
+            AI confidence: {Math.round(item.confidence * 100)}%
+          </span>
+        </div>
+      )}
+
       <div className="mt-auto pt-4 flex items-center justify-between">
         <span className={`inline-flex items-center gap-1 text-xs font-semibold ${
-          closed ? 'text-[var(--muted)]' : closingSoon ? 'text-[#FB7185]' : 'text-[var(--muted)]'
+          isRolling ? 'text-[var(--muted)]' : closed ? 'text-[var(--muted)]' : closingSoon ? 'text-[#FB7185]' : 'text-[var(--muted)]'
         }`}>
-          <Clock size={12} /> {closed ? 'Closed' : closingSoon ? `Closes in ${daysLeft}d` : `${daysLeft}d left`}
+          <Clock size={12} />
+          {isRolling ? 'Rolling deadline' : closed ? 'Closed' : closingSoon ? `Closes in ${daysLeft}d` : `${daysLeft}d left`}
         </span>
         <a href={item.applicationUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold text-[#065F46] dark:text-[#84CC16] inline-flex items-center gap-1">
           Apply <ExternalLink size={12} />

@@ -49,12 +49,25 @@ export type Scholarship = {
   provider: string;
   description: string;
   eligibility: string;
-  deadline: string;
+  deadline: string | null;
   awardAmount?: string;
   applicationUrl: string;
   level: 'UNDERGRAD' | 'MASTERS' | 'PHD' | 'POSTDOC' | 'OTHER';
   fieldOfStudy?: string;
   tags: string[];
+  // Ingestion / admin-review fields (optional so existing rows still parse)
+  status?: string;
+  source?: string;
+  sourceUrl?: string;
+  sourceName?: string;
+  confidence?: number | null;
+  verifierReason?: string | null;
+  category?: {
+    field?: string | null;
+    region?: string | null;
+    funding?: string | null;
+  } | null;
+  ingestedAt?: string | null;
 };
 
 export type MentorProfile = {
