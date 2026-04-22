@@ -58,6 +58,19 @@ enum ScholarshipStatus {
   EXPIRED
 }
 
+enum OpportunitySource {
+  USER
+  ADMIN
+  INGESTED
+}
+
+enum OpportunityStatus {
+  PENDING_REVIEW
+  PUBLISHED
+  REJECTED
+  EXPIRED
+}
+
 enum ScholarshipLevel {
   UNDERGRAD
   MASTERS
@@ -174,27 +187,41 @@ model Opportunity {
   salaryMin             Int?
   salaryMax             Int?
   currency              String          @default("GHS")
-  deadline              DateTime
+  deadline              DateTime?
   requiredSkills        String[]        @default([])
   preferredSkills       String[]        @default([])
   industry              String?
   experienceLevel       String?
   applicationUrl        String?
-  postedById            String
-  postedBy              User            @relation("PostedOpportunities", fields: [postedById], references: [id], onDelete: Cascade)
+  postedById            String?
+  postedBy              User?           @relation("PostedOpportunities", fields: [postedById], references: [id], onDelete: SetNull)
   isApproved            Boolean         @default(true)
   isActive              Boolean         @default(true)
   isFeatured            Boolean         @default(false)
   customQuestions       Json?
   anonymousApplications Boolean         @default(false)
-  createdAt             DateTime        @default(now())
-  updatedAt             DateTime        @updatedAt
+
+  source            OpportunitySource @default(USER)
+  status            OpportunityStatus @default(PUBLISHED)
+  sourceUrl         String?
+  sourceName        String?
+  confidence        Float?
+  verifierReason    String?
+  ingestedAt        DateTime?
+  category          Json?
+  rawPayload        Json?
+  additionalSources String[]          @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   applications Application[]
   bookmarks    Bookmark[]
 
   @@index([type, locationType, isActive])
   @@index([deadline])
+  @@index([source, status])
+  @@index([status, ingestedAt])
 }
 
 model Application {
