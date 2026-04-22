@@ -4,14 +4,14 @@
 //
 // Gated to ADMIN at the route layer in App.tsx.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
   ArrowLeft, Briefcase, Check, X, ExternalLink, Pencil, Clock,
-  Globe, Building2
+  Globe, Building2, CheckSquare
 } from 'lucide-react';
 import { api } from '../../services/api';
 import type { Opportunity } from '../../types';
@@ -162,11 +162,24 @@ function EditForm({
 export default function AdminOpportunitiesReviewPage() {
   const qc = useQueryClient();
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [selected, setSelected] = useState(new Set<string>());
 
   const { data: pending = [], isLoading } = useQuery<Opportunity[]>({
     queryKey: QK,
     queryFn: async () => (await api.get('/admin/opportunities/pending')).data.data,
   });
+
+  // Auto-drop ids that are no longer in the pending list after refetch
+  useEffect(() => {
+    if (selected.size === 0) return;
+    const visibleIds = new Set(pending.map((o) => o.id));
+    const next = new Set([...selected].filter((id) => visibleIds.has(id)));
+    if (next.size !== selected.size) setSelected(next);
+  }, [pending]);
+
+  const allVisible = pending;
+  const allSelected = allVisible.length > 0 && allVisible.every((o) => selected.has(o.id));
+  const someSelected = selected.size > 0 && !allSelected;
 
   const approveMut = useMutation({
     mutationFn: async (id: string) =>
@@ -206,7 +219,32 @@ export default function AdminOpportunitiesReviewPage() {
     onError: () => toast.error('Edit failed — please try again'),
   });
 
+  const bulkApproveMut = useMutation({
+    mutationFn: (ids: string[]) =>
+      api.post('/admin/opportunities/bulk/approve', { ids }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: QK });
+      setSelected(new Set());
+      const n = res.data?.data?.updated ?? selected.size;
+      toast.success(`${n} job${n === 1 ? '' : 's'} approved`);
+    },
+    onError: () => toast.error('Bulk approve failed — please try again'),
+  });
+
+  const bulkRejectMut = useMutation({
+    mutationFn: (ids: string[]) =>
+      api.post('/admin/opportunities/bulk/reject', { ids }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: QK });
+      setSelected(new Set());
+      const n = res.data?.data?.updated ?? selected.size;
+      toast.success(`${n} job${n === 1 ? '' : 's'} rejected`);
+    },
+    onError: () => toast.error('Bulk reject failed — please try again'),
+  });
+
   const isBusy = approveMut.isPending || rejectMut.isPending || editApproveMut.isPending;
+  const isBulkBusy = bulkApproveMut.isPending || bulkRejectMut.isPending;
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10">
@@ -231,6 +269,35 @@ export default function AdminOpportunitiesReviewPage() {
         </span>
       </div>
 
+      {/* Bulk action bar — only shown when items are selected */}
+      {selected.size > 0 && (
+        <div className="sticky top-0 z-10 bg-[var(--surface,var(--card))]/95 backdrop-blur border border-[var(--border)] rounded-xl p-3 flex items-center gap-3 mb-4">
+          <CheckSquare size={16} className="text-[#065F46] dark:text-[#84CC16] shrink-0" />
+          <span className="text-sm font-semibold flex-1">{selected.size} selected</span>
+          <button
+            onClick={() => { if (selected.size > 0) bulkApproveMut.mutate([...selected]); }}
+            disabled={isBulkBusy}
+            className="inline-flex items-center gap-1 rounded-lg bg-[#065F46] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#064E3B] disabled:opacity-60"
+          >
+            <Check size={13} /> Approve all
+          </button>
+          <button
+            onClick={() => { if (selected.size > 0) bulkRejectMut.mutate([...selected]); }}
+            disabled={isBulkBusy}
+            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:hover:bg-rose-950 disabled:opacity-60"
+          >
+            <X size={13} /> Reject all
+          </button>
+          <button
+            onClick={() => setSelected(new Set())}
+            disabled={isBulkBusy}
+            className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--fg)] hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-60"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="space-y-3">
           {[0, 1, 2].map((i) => <div key={i} className="card h-40 skeleton" />)}
@@ -247,6 +314,21 @@ export default function AdminOpportunitiesReviewPage() {
         </div>
       ) : (
         <div className="space-y-3">
+          {/* Select-all checkbox */}
+          <div className="flex items-center gap-2 px-1 pb-1">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              ref={(el) => { if (el) el.indeterminate = someSelected; }}
+              onChange={() => {
+                if (allSelected || someSelected) setSelected(new Set());
+                else setSelected(new Set(allVisible.map((i) => i.id)));
+              }}
+              className="h-4 w-4 cursor-pointer accent-[#065F46]"
+            />
+            <span className="text-xs text-[var(--muted)]">Select all</span>
+          </div>
+
           {pending.map((opp, i) => (
             <motion.div
               key={opp.id}
@@ -260,6 +342,18 @@ export default function AdminOpportunitiesReviewPage() {
                 <div className="min-w-0 flex-1">
                   {/* Title + confidence pill */}
                   <div className="flex flex-wrap items-center gap-2">
+                    {/* Per-row checkbox */}
+                    <input
+                      type="checkbox"
+                      checked={selected.has(opp.id)}
+                      onChange={(e) => {
+                        const next = new Set(selected);
+                        if (e.target.checked) next.add(opp.id);
+                        else next.delete(opp.id);
+                        setSelected(next);
+                      }}
+                      className="h-4 w-4 shrink-0 cursor-pointer accent-[#065F46]"
+                    />
                     <h3 className="font-heading text-lg font-bold">{opp.title}</h3>
                     {opp.confidence != null && (
                       <span className="rounded-full bg-[#F59E0B]/15 px-2 py-0.5 text-[10px] font-bold text-[#92400E] dark:text-[#F59E0B]">
