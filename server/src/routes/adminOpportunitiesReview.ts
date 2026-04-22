@@ -36,7 +36,9 @@ const bulkSchema = z.object({
 });
 
 // POST /api/admin/opportunities/bulk/approve
-// Bulk-approve up to 100 PENDING_REVIEW opportunities in one DB round trip.
+// Bulk-approve opportunities: sets isApproved=true.
+// For PENDING_REVIEW items, also transitions status to PUBLISHED.
+// Used by both the review queue and the general management page.
 router.post('/bulk/approve', validate(bulkSchema), async (req, res, next) => {
   try {
     const { ids } = req.body as z.infer<typeof bulkSchema>;
@@ -44,21 +46,28 @@ router.post('/bulk/approve', validate(bulkSchema), async (req, res, next) => {
       where: { id: { in: ids } },
       select: { id: true, status: true, isApproved: true }
     });
-    const result = await prisma.opportunity.updateMany({
+    // Transition PENDING_REVIEW rows to PUBLISHED
+    const pendingResult = await prisma.opportunity.updateMany({
       where: { id: { in: ids }, status: 'PENDING_REVIEW' },
       data: { status: 'PUBLISHED', isApproved: true }
     });
+    // Also approve non-pending rows (general management use-case)
+    const nonPendingResult = await prisma.opportunity.updateMany({
+      where: { id: { in: ids }, status: { not: 'PENDING_REVIEW' }, isApproved: false },
+      data: { isApproved: true }
+    });
+    const total = pendingResult.count + nonPendingResult.count;
     await logAudit({
       actorId: req.auth!.sub,
       action: 'opportunity.bulk_approve',
       metadata: {
         ids,
-        updated: result.count,
+        updated: total,
         requested: ids.length,
         previousStates: previous.map((r) => ({ id: r.id, status: r.status, isApproved: r.isApproved }))
       }
     });
-    res.json({ success: true, data: { updated: result.count, requested: ids.length } });
+    res.json({ success: true, data: { updated: total, requested: ids.length } });
   } catch (e) { next(e); }
 });
 
