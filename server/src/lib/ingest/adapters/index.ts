@@ -1,14 +1,33 @@
 import type { SourceAdapter } from '../types.js';
 import { mockAdapter } from './_mock.js';
+import { opportunityDeskAdapter } from './opportunitydesk.js';
+import { scholarshipRegionAdapter } from './scholarshipregion.js';
+import { opportunitiesForAfricansAdapter } from './opportunitiesforafricans.js';
+import { scholars4devAdapter } from './scholars4dev.js';
+import { opportunitiesForYouthAdapter } from './opportunitiesforyouth.js';
 
-// Adapters added here appear automatically in cron runs. Slice B adds the
-// real sources — each in its own file, registered via this array.
-const ALL: SourceAdapter[] = [mockAdapter];
+// Real adapters always register; the mock adapter only registers when
+// INCLUDE_MOCK_ADAPTER=1 so production cron runs never ingest fixture rows.
+const REAL: SourceAdapter[] = [
+  opportunityDeskAdapter,
+  scholarshipRegionAdapter,
+  opportunitiesForAfricansAdapter,
+  scholars4devAdapter,
+  opportunitiesForYouthAdapter
+];
+
+function buildAll(): SourceAdapter[] {
+  const out = [...REAL];
+  if (process.env.INCLUDE_MOCK_ADAPTER === '1') {
+    out.unshift(mockAdapter);
+  }
+  return out;
+}
 
 export function listAdapters(): SourceAdapter[] {
-  return ALL.slice();
+  return buildAll();
 }
 
 export function getAdapter(id: string): SourceAdapter | null {
-  return ALL.find((a) => a.id === id) ?? null;
+  return buildAll().find((a) => a.id === id) ?? null;
 }
