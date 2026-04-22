@@ -8,22 +8,81 @@ const router = Router();
 
 router.get('/', optionalAuth, async (req, res, next) => {
   try {
-    const { q, level, field, status } = req.query as Record<string, string>;
+    const { q, level, field, region, funding, status, includeRolling } = req.query as Record<string, string>;
     const now = new Date();
+
+    // Visibility rule: show rows that are either user-submitted and approved
+    // OR are PUBLISHED ingested rows. This OR is cleaner than adding an
+    // explicit `status: 'PUBLISHED'` check because it naturally handles
+    // legacy rows (isApproved=true, no status set) without a migration.
+    // REJECTED and EXPIRED rows are excluded because they satisfy neither arm.
+    const visibilityClause = {
+      OR: [
+        { isApproved: true },
+        { status: 'PUBLISHED' as const }
+      ]
+    };
+
+    // deadline filter: open means deadline in the future OR null (if
+    // includeRolling is set). Closed means deadline is in the past (always
+    // non-null). Without a status param no deadline filter is applied.
+    let deadlineClause: object | undefined;
+    if (status === 'open') {
+      if (includeRolling === 'true') {
+        // null deadlines (rolling scholarships) + future deadlines both qualify
+        deadlineClause = {
+          OR: [
+            { deadline: null },
+            { deadline: { gte: now } }
+          ]
+        };
+      } else {
+        deadlineClause = { deadline: { gte: now } };
+      }
+    } else if (status === 'closed') {
+      deadlineClause = { deadline: { lt: now } };
+    }
+
+    // `field` param: for user-submitted rows match against `fieldOfStudy`
+    // (free-text, insensitive) AND for ingested rows match against
+    // category->>'field' (structured enum). Both arms are OR-ed so a single
+    // ?field=STEM query surfaces both kinds of match.
+    let fieldClause: object | undefined;
+    if (field) {
+      fieldClause = {
+        OR: [
+          { fieldOfStudy: { contains: field, mode: 'insensitive' as const } },
+          { category: { path: ['field'], equals: field } }
+        ]
+      };
+    }
+
+    // `region` and `funding` only exist in the structured category JSON.
+    const regionClause = region
+      ? { category: { path: ['region'], equals: region } }
+      : undefined;
+
+    const fundingClause = funding
+      ? { category: { path: ['funding'], equals: funding } }
+      : undefined;
+
     const items = await prisma.scholarship.findMany({
       where: {
-        isApproved: true,
-        ...(level && { level: level as any }),
-        ...(field && { fieldOfStudy: { contains: field, mode: 'insensitive' } }),
-        ...(status === 'open' && { deadline: { gte: now } }),
-        ...(status === 'closed' && { deadline: { lt: now } }),
-        ...(q && {
-          OR: [
-            { title: { contains: q, mode: 'insensitive' } },
-            { provider: { contains: q, mode: 'insensitive' } },
-            { description: { contains: q, mode: 'insensitive' } }
-          ]
-        })
+        AND: [
+          visibilityClause,
+          ...(level ? [{ level: level as any }] : []),
+          ...(fieldClause ? [fieldClause] : []),
+          ...(regionClause ? [regionClause] : []),
+          ...(fundingClause ? [fundingClause] : []),
+          ...(deadlineClause ? [deadlineClause] : []),
+          ...(q ? [{
+            OR: [
+              { title: { contains: q, mode: 'insensitive' as const } },
+              { provider: { contains: q, mode: 'insensitive' as const } },
+              { description: { contains: q, mode: 'insensitive' as const } }
+            ]
+          }] : [])
+        ]
       },
       orderBy: { deadline: 'asc' },
       take: 100
