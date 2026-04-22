@@ -5,6 +5,9 @@ import { scholarshipRegionAdapter } from './scholarshipregion.js';
 import { opportunitiesForAfricansAdapter } from './opportunitiesforafricans.js';
 import { scholars4devAdapter } from './scholars4dev.js';
 import { opportunitiesForYouthAdapter } from './opportunitiesforyouth.js';
+import { commonwealthAdapter } from './commonwealth.js';
+import { rhodesAdapter } from './rhodes.js';
+import { schwarzmanAdapter } from './schwarzman.js';
 
 // Real adapters always register; the mock adapter only registers when
 // INCLUDE_MOCK_ADAPTER=1 so production cron runs never ingest fixture rows.
@@ -13,7 +16,10 @@ const REAL: SourceAdapter[] = [
   scholarshipRegionAdapter,
   opportunitiesForAfricansAdapter,
   scholars4devAdapter,
-  opportunitiesForYouthAdapter
+  opportunitiesForYouthAdapter,
+  commonwealthAdapter,
+  rhodesAdapter,
+  schwarzmanAdapter
 ];
 
 function buildAll(): SourceAdapter[] {
