@@ -9,6 +9,11 @@
       "maxDuration": 30
     }
   },
+  "crons": [
+    { "path": "/api/ingest/scholarships/run", "schedule": "0 3 * * *" },
+    { "path": "/api/ingest/drain",            "schedule": "5,15,25 3 * * *" },
+    { "path": "/api/ingest/expire",           "schedule": "30 3 * * *" }
+  ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index" },
     { "source": "/((?!api/|assets/|favicon|uploads/).*)", "destination": "/index.html" }
