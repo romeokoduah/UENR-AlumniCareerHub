@@ -237,6 +237,11 @@ router.get('/', optionalAuth, async (req, res, next) => {
       where: {
         isActive: true,
         isApproved: true,
+        // Explicitly gate on status=PUBLISHED too — isApproved alone can drift
+        // stale (a prior ingestion may have flipped it while the latest run
+        // demoted the item back to PENDING_REVIEW via status). EXPIRED and
+        // REJECTED rows are also hidden here by design.
+        status: 'PUBLISHED',
         // Allow null deadlines (ingested jobs from Adzuna often don't carry
         // an explicit deadline — the role is open until filled). Anything
         // with an explicit past deadline still gets filtered out.

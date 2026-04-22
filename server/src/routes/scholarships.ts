@@ -11,17 +11,13 @@ router.get('/', optionalAuth, async (req, res, next) => {
     const { q, level, field, region, funding, status, includeRolling } = req.query as Record<string, string>;
     const now = new Date();
 
-    // Visibility rule: show rows that are either user-submitted and approved
-    // OR are PUBLISHED ingested rows. This OR is cleaner than adding an
-    // explicit `status: 'PUBLISHED'` check because it naturally handles
-    // legacy rows (isApproved=true, no status set) without a migration.
-    // REJECTED and EXPIRED rows are excluded because they satisfy neither arm.
-    const visibilityClause = {
-      OR: [
-        { isApproved: true },
-        { status: 'PUBLISHED' as const }
-      ]
-    };
+    // Visibility: only show PUBLISHED rows. Scholarship.status defaults to
+    // PUBLISHED on the schema, so legacy user-submitted rows satisfy this
+    // without a migration. The previous `OR: [isApproved=true, status=PUBLISHED]`
+    // was vulnerable to drift — an ingested row first published then demoted
+    // to PENDING_REVIEW on re-ingest could leak through if isApproved stayed
+    // stale. Gating on status directly is the precise rule.
+    const visibilityClause = { status: 'PUBLISHED' as const };
 
     // deadline filter: open means deadline in the future OR null (if
     // includeRolling is set). Closed means deadline is in the past (always
