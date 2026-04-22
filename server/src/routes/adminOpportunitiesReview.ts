@@ -89,6 +89,69 @@ router.post('/bulk/reject', validate(bulkSchema), async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// ===== GENERAL-MANAGEMENT BULK ACTIONS =====
+// These operate on any opportunity (not just PENDING_REVIEW).
+
+// POST /api/admin/opportunities/bulk/unapprove
+router.post('/bulk/unapprove', validate(bulkSchema), async (req, res, next) => {
+  try {
+    const { ids } = req.body as z.infer<typeof bulkSchema>;
+    const result = await prisma.opportunity.updateMany({ where: { id: { in: ids } }, data: { isApproved: false } });
+    await logAudit({ actorId: req.auth!.sub, action: 'opportunity.bulk_unapprove', metadata: { ids, updated: result.count } });
+    res.json({ success: true, data: { updated: result.count, requested: ids.length } });
+  } catch (e) { next(e); }
+});
+
+// POST /api/admin/opportunities/bulk/activate
+router.post('/bulk/activate', validate(bulkSchema), async (req, res, next) => {
+  try {
+    const { ids } = req.body as z.infer<typeof bulkSchema>;
+    const result = await prisma.opportunity.updateMany({ where: { id: { in: ids } }, data: { isActive: true } });
+    await logAudit({ actorId: req.auth!.sub, action: 'opportunity.bulk_activate', metadata: { ids, updated: result.count } });
+    res.json({ success: true, data: { updated: result.count, requested: ids.length } });
+  } catch (e) { next(e); }
+});
+
+// POST /api/admin/opportunities/bulk/deactivate
+router.post('/bulk/deactivate', validate(bulkSchema), async (req, res, next) => {
+  try {
+    const { ids } = req.body as z.infer<typeof bulkSchema>;
+    const result = await prisma.opportunity.updateMany({ where: { id: { in: ids } }, data: { isActive: false } });
+    await logAudit({ actorId: req.auth!.sub, action: 'opportunity.bulk_deactivate', metadata: { ids, updated: result.count } });
+    res.json({ success: true, data: { updated: result.count, requested: ids.length } });
+  } catch (e) { next(e); }
+});
+
+// POST /api/admin/opportunities/bulk/feature
+router.post('/bulk/feature', validate(bulkSchema), async (req, res, next) => {
+  try {
+    const { ids } = req.body as z.infer<typeof bulkSchema>;
+    const result = await prisma.opportunity.updateMany({ where: { id: { in: ids } }, data: { isFeatured: true } });
+    await logAudit({ actorId: req.auth!.sub, action: 'opportunity.bulk_feature', metadata: { ids, updated: result.count } });
+    res.json({ success: true, data: { updated: result.count, requested: ids.length } });
+  } catch (e) { next(e); }
+});
+
+// POST /api/admin/opportunities/bulk/unfeature
+router.post('/bulk/unfeature', validate(bulkSchema), async (req, res, next) => {
+  try {
+    const { ids } = req.body as z.infer<typeof bulkSchema>;
+    const result = await prisma.opportunity.updateMany({ where: { id: { in: ids } }, data: { isFeatured: false } });
+    await logAudit({ actorId: req.auth!.sub, action: 'opportunity.bulk_unfeature', metadata: { ids, updated: result.count } });
+    res.json({ success: true, data: { updated: result.count, requested: ids.length } });
+  } catch (e) { next(e); }
+});
+
+// POST /api/admin/opportunities/bulk/delete
+router.post('/bulk/delete', validate(bulkSchema), async (req, res, next) => {
+  try {
+    const { ids } = req.body as z.infer<typeof bulkSchema>;
+    const result = await prisma.opportunity.deleteMany({ where: { id: { in: ids } } });
+    await logAudit({ actorId: req.auth!.sub, action: 'opportunity.bulk_delete', metadata: { ids, deleted: result.count } });
+    res.json({ success: true, data: { updated: result.count, requested: ids.length } });
+  } catch (e) { next(e); }
+});
+
 // POST /api/admin/opportunities/:id/approve
 // Publish the opportunity: status=PUBLISHED, isApproved=true.
 router.post('/:id/approve', async (req, res, next) => {

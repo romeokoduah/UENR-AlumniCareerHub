@@ -3,12 +3,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
-  Search, Pencil, Trash2, Eye, EyeOff, CheckCircle2, AlertCircle,
-  ArrowLeft, X, Save, Clock, MapPin, Building2, ExternalLink
+  Search, Pencil, Trash2, Eye, EyeOff, CheckCircle2,
+  ArrowLeft, X, Save, Clock, MapPin, Building2, ExternalLink,
+  CheckSquare, Star, PlusCircle
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import type { Opportunity } from '../types';
+import { useBulkSelection } from '../hooks/useBulkSelection';
 
 type AdminOpportunity = Opportunity & {
   isActive: boolean;
@@ -29,9 +31,12 @@ const STATUS_FILTERS: { value: StatusFilter; label: string; }[] = [
 
 export default function AdminOpportunitiesPage() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [q, setQ] = useState('');
   const [status, setStatus] = useState<StatusFilter>('all');
   const [editing, setEditing] = useState<AdminOpportunity | null>(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
 
   const { data = [], isLoading } = useQuery<AdminOpportunity[]>({
     queryKey: ['admin', 'opportunities', q, status],
@@ -42,6 +47,15 @@ export default function AdminOpportunitiesPage() {
       return (await api.get('/admin/opportunities', { params })).data.data;
     }
   });
+
+  const { selected, toggle, toggleAll, allSelected, someSelected, clear } = useBulkSelection(data);
+
+  // Reset page when filter changes
+  const handleSetQ = (v: string) => { setQ(v); setPage(1); clear(); };
+  const handleSetStatus = (v: StatusFilter) => { setStatus(v); setPage(1); clear(); };
+
+  const pageData = data.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(data.length / PAGE_SIZE));
 
   const counts = useMemo(() => {
     const now = Date.now();
@@ -91,6 +105,25 @@ export default function AdminOpportunitiesPage() {
     }
   };
 
+  const invalidateAll = () => {
+    qc.invalidateQueries({ queryKey: ['admin', 'opportunities'] });
+    qc.invalidateQueries({ queryKey: ['opportunities'] });
+  };
+
+  const bulkAction = (action: string, label: string, confirmMsg?: string) => {
+    if (selected.size === 0) return;
+    if (confirmMsg && !confirm(confirmMsg)) return;
+    const ids = [...selected];
+    api.post(`/admin/opportunities/bulk/${action}`, { ids })
+      .then((r) => {
+        const n = r.data?.data?.updated ?? ids.length;
+        toast.success(`${label}: ${n} updated`);
+        clear();
+        invalidateAll();
+      })
+      .catch(() => toast.error(`${label} failed`));
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-10">
       <div className="flex items-center gap-2 mb-2">
@@ -104,6 +137,12 @@ export default function AdminOpportunitiesPage() {
           <h1 className="font-heading text-3xl font-extrabold">Opportunities editor</h1>
           <p className="text-sm text-[var(--muted)]">Every job, internship, and service placement across the platform — edit, approve, or remove.</p>
         </div>
+        <button
+          onClick={() => navigate('/opportunities/new')}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-[#065F46] px-4 py-2 text-sm font-semibold text-white hover:bg-[#064E3B]"
+        >
+          <PlusCircle size={15} /> Post opportunity
+        </button>
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5 mb-6">
@@ -121,14 +160,14 @@ export default function AdminOpportunitiesPage() {
             className="input pl-9"
             placeholder="Search title, company, location…"
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(e) => handleSetQ(e.target.value)}
           />
         </div>
         <div className="flex flex-wrap gap-1.5">
           {STATUS_FILTERS.map((f) => (
             <button
               key={f.value}
-              onClick={() => setStatus(f.value)}
+              onClick={() => handleSetStatus(f.value)}
               className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${
                 status === f.value
                   ? 'bg-[#065F46] text-white'
@@ -140,6 +179,27 @@ export default function AdminOpportunitiesPage() {
           ))}
         </div>
       </div>
+
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div className="sticky top-0 z-10 bg-[var(--surface,var(--card))]/95 backdrop-blur border border-[var(--border)] rounded-xl p-3 flex flex-wrap items-center gap-2 mb-4">
+          <CheckSquare size={15} className="text-[#065F46] shrink-0" />
+          <span className="text-sm font-semibold flex-1 min-w-[4rem]">{selected.size} selected</span>
+          <button onClick={() => bulkAction('approve', 'Approve')} className="btn-xs bg-[#065F46] text-white">Approve</button>
+          <button onClick={() => bulkAction('unapprove', 'Unapprove')} className="btn-xs border border-[var(--border)]">Unapprove</button>
+          <button onClick={() => bulkAction('activate', 'Activate')} className="btn-xs border border-[var(--border)]">Activate</button>
+          <button onClick={() => bulkAction('deactivate', 'Deactivate')} className="btn-xs border border-[var(--border)]">Deactivate</button>
+          <button onClick={() => bulkAction('feature', 'Feature')} className="btn-xs border border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-400 inline-flex items-center gap-1"><Star size={12} />Feature</button>
+          <button onClick={() => bulkAction('unfeature', 'Unfeature')} className="btn-xs border border-[var(--border)]">Unfeature</button>
+          <button
+            onClick={() => bulkAction('delete', 'Delete', `Delete ${selected.size} opportunit${selected.size === 1 ? 'y' : 'ies'}? This removes all related applications. This cannot be undone.`)}
+            className="btn-xs border border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:hover:bg-rose-950"
+          >
+            <Trash2 size={12} /> Delete…
+          </button>
+          <button onClick={clear} className="btn-xs border border-[var(--border)]">Clear</button>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="space-y-3">
@@ -153,17 +213,37 @@ export default function AdminOpportunitiesPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {data.map((o, i) => (
+          {/* Select-all checkbox */}
+          <div className="flex items-center gap-2 px-1 pb-1">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              ref={(el) => { if (el) el.indeterminate = someSelected; }}
+              onChange={toggleAll}
+              className="h-4 w-4 cursor-pointer accent-[#065F46]"
+            />
+            <span className="text-xs text-[var(--muted)]">Select all visible ({pageData.length})</span>
+          </div>
+          {pageData.map((o, i) => (
             <OpportunityRow
               key={o.id}
               item={o}
               index={i}
+              selected={selected.has(o.id)}
+              onSelect={() => toggle(o.id)}
               onEdit={() => setEditing(o)}
               onToggle={() => toggleActive(o)}
               onApprove={() => approve(o)}
               onDelete={() => confirmDelete(o)}
             />
           ))}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 pt-4">
+              <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="btn-ghost text-sm disabled:opacity-40">« Prev</button>
+              <span className="text-sm text-[var(--muted)]">Page {page} of {totalPages}</span>
+              <button disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} className="btn-ghost text-sm disabled:opacity-40">Next »</button>
+            </div>
+          )}
         </div>
       )}
 
@@ -187,10 +267,12 @@ export default function AdminOpportunitiesPage() {
 
 // ============ ROW ============
 function OpportunityRow({
-  item, index, onEdit, onToggle, onApprove, onDelete
+  item, index, selected, onSelect, onEdit, onToggle, onApprove, onDelete
 }: {
   item: AdminOpportunity;
   index: number;
+  selected: boolean;
+  onSelect: () => void;
   onEdit: () => void;
   onToggle: () => void;
   onApprove: () => void;
@@ -214,7 +296,15 @@ function OpportunityRow({
       transition={{ delay: Math.min(index * 0.02, 0.3) }}
       className="card flex flex-col gap-4 md:flex-row md:items-center md:justify-between"
     >
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 flex items-start gap-3">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onSelect}
+          className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-[#065F46]"
+          onClick={(e) => e.stopPropagation()}
+        />
+        <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="font-heading text-lg font-bold truncate">{item.title}</h3>
           {statusBadges.map((b) => (
@@ -246,6 +336,7 @@ function OpportunityRow({
             Posted by {item.postedBy.firstName} {item.postedBy.lastName} ({item.postedBy.role.toLowerCase()})
           </div>
         )}
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 shrink-0">

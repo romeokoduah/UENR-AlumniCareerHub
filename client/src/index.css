@@ -96,6 +96,15 @@
 }
 .btn-outline:hover { background: #065F46; color: white; }
 
+.btn-xs {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.25rem;
+  border-radius: 0.5rem; padding: 0.25rem 0.625rem; font-size: 0.75rem; font-weight: 600;
+  transition: all 0.2s; background: transparent; color: inherit; cursor: pointer;
+}
+.btn-xs:hover { background: rgba(0,0,0,0.05); }
+.dark .btn-xs:hover { background: rgba(255,255,255,0.05); }
+.btn-xs:disabled { opacity: 0.6; cursor: not-allowed; }
+
 .card {
   border-radius: 1rem;
   border: 1px solid var(--border);
