@@ -10,8 +10,8 @@
     }
   },
   "crons": [
-    { "path": "/api/ingest/scholarships/run", "schedule": "0 3 * * *" },
-    { "path": "/api/ingest/expire",           "schedule": "30 3 * * *" }
+    { "path": "/api/ingest/all/run",    "schedule": "0 3 * * *" },
+    { "path": "/api/ingest/all/expire", "schedule": "30 3 * * *" }
   ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index" },
