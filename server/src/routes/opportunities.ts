@@ -218,7 +218,19 @@ async function aiScoreApplicationFor(applicationId: string): Promise<void> {
 
 router.get('/', optionalAuth, async (req, res, next) => {
   try {
-    const { q, type, locationType, industry, skill } = req.query as Record<string, string>;
+    const { q, type, locationType, industry, skill, origin } = req.query as Record<string, string>;
+
+    // Build origin filter:
+    // - community → USER | ADMIN | null (legacy rows pre-source-column)
+    // - aggregator → INGESTED
+    // - unset → no filter
+    const originFilter =
+      origin === 'community'
+        ? { OR: [{ source: 'USER' as const }, { source: 'ADMIN' as const }, { source: null }] }
+        : origin === 'aggregator'
+        ? { source: 'INGESTED' as const }
+        : {};
+
     const items = await prisma.opportunity.findMany({
       where: {
         isActive: true,
@@ -234,6 +246,7 @@ router.get('/', optionalAuth, async (req, res, next) => {
             ]
           }
         ],
+        ...originFilter,
         ...(type && { type: type as any }),
         ...(locationType && { locationType: locationType as any }),
         ...(industry && { industry: { contains: industry, mode: 'insensitive' } }),
