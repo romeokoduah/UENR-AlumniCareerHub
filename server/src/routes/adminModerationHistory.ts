@@ -17,6 +17,7 @@
 //   entry with action '<base>.undo'.
 
 import { Router } from 'express';
+import { ScholarshipStatus, OpportunityStatus } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../lib/audit.js';
@@ -303,7 +304,7 @@ router.post('/:auditId/undo', async (req, res, next) => {
       }
       await prisma.scholarship.update({
         where: { id: entry.targetId },
-        data: { status: meta.previousStatus as string, isApproved: meta.previousIsApproved as boolean }
+        data: { status: meta.previousStatus as ScholarshipStatus, isApproved: meta.previousIsApproved as boolean }
       });
       restored = 1;
     } else if (entry.action === 'opportunity.approve' || entry.action === 'opportunity.reject') {
@@ -315,7 +316,7 @@ router.post('/:auditId/undo', async (req, res, next) => {
       }
       await prisma.opportunity.update({
         where: { id: entry.targetId },
-        data: { status: meta.previousStatus as string, isApproved: meta.previousIsApproved as boolean }
+        data: { status: meta.previousStatus as OpportunityStatus, isApproved: meta.previousIsApproved as boolean }
       });
       restored = 1;
     }
@@ -328,7 +329,7 @@ router.post('/:auditId/undo', async (req, res, next) => {
         try {
           await prisma.scholarship.update({
             where: { id: prev.id },
-            data: { status: prev.status, isApproved: prev.isApproved }
+            data: { status: prev.status as ScholarshipStatus, isApproved: prev.isApproved }
           });
           restored++;
         } catch { /* row deleted since — skip */ }
@@ -341,7 +342,7 @@ router.post('/:auditId/undo', async (req, res, next) => {
         try {
           await prisma.opportunity.update({
             where: { id: prev.id },
-            data: { status: prev.status, isApproved: prev.isApproved }
+            data: { status: prev.status as OpportunityStatus, isApproved: prev.isApproved }
           });
           restored++;
         } catch { /* row deleted since — skip */ }
@@ -389,10 +390,10 @@ router.post('/:auditId/undo', async (req, res, next) => {
         const kind = entry.targetType;
         try {
           if (kind === 'scholarship') {
-            await prisma.scholarship.update({ where: { id: entry.targetId }, data: { isApproved: false, status: 'PENDING_REVIEW' } });
+            await prisma.scholarship.update({ where: { id: entry.targetId }, data: { isApproved: false, status: ScholarshipStatus.PENDING_REVIEW } });
             restored = 1;
           } else if (kind === 'opportunity') {
-            await prisma.opportunity.update({ where: { id: entry.targetId }, data: { isApproved: false, status: 'PENDING_REVIEW' } });
+            await prisma.opportunity.update({ where: { id: entry.targetId }, data: { isApproved: false, status: OpportunityStatus.PENDING_REVIEW } });
             restored = 1;
           }
           // For delete-based rejections (learning_resource, interview_question, achievement),
