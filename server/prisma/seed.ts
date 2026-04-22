@@ -35,12 +35,16 @@ async function main() {
       data: {
         // Preserve any existing flags by spreading; Prisma JSON merge is manual.
         ...((existingFlags?.data as object | undefined) ?? {}),
-        'scholarships-ingest-enabled': false
+        'scholarships-ingest-enabled': false,
+        'opportunities-ingest-enabled': false
       }
     },
     create: {
       key: 'feature-flags',
-      data: { 'scholarships-ingest-enabled': false }
+      data: {
+        'scholarships-ingest-enabled': false,
+        'opportunities-ingest-enabled': false
+      }
     }
   });
 
