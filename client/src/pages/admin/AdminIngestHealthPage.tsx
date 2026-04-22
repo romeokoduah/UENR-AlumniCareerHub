@@ -2,9 +2,9 @@
 // Shows last 5 runs, per-source job breakdown, counts by status, feature-flag
 // state, an ad-hoc URL ingest form, and a "run pipeline now" trigger.
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Activity, CheckCircle2, XCircle, Clock, Play, Link2, Scan, Plus, X as XIcon } from 'lucide-react';
+import { Activity, CheckCircle2, XCircle, Clock, Play, Link2, Scan, Plus, X as XIcon, Upload } from 'lucide-react';
 import { api } from '../../services/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -286,6 +286,63 @@ type ScanResult = {
 
 const CQ = ['admin', 'ingest-candidates'] as const;
 
+type CsvPreviewRow = { url: string; kind: 'scholarship' | 'job'; label: string };
+type CsvPreview = {
+  valid: CsvPreviewRow[];
+  invalidCount: number;
+  invalidReasons: string[];
+  duplicateCount: number;
+};
+
+function parseCandidateCsv(text: string, existing: CandidateUrl[]): CsvPreview {
+  const existingNorm = new Set(existing.map((c) => c.url.toLowerCase().replace(/\/+$/, '')));
+  const normalize = (u: string) => u.toLowerCase().replace(/\/+$/, '');
+  const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim());
+  if (lines.length < 2) return { valid: [], invalidCount: 0, invalidReasons: [], duplicateCount: 0 };
+
+  const headers = lines[0].split(',').map((h) => h.trim().toLowerCase());
+  const urlIdx = headers.indexOf('url');
+  const kindIdx = headers.indexOf('kind');
+  const labelIdx = headers.indexOf('label');
+
+  if (urlIdx === -1 || kindIdx === -1) {
+    return { valid: [], invalidCount: lines.length - 1, invalidReasons: ['Missing required column: url or kind'], duplicateCount: 0 };
+  }
+
+  const valid: CsvPreviewRow[] = [];
+  const invalidReasons: string[] = [];
+  let invalidCount = 0;
+  let duplicateCount = 0;
+  const seenInFile = new Set<string>();
+
+  for (let i = 1; i < lines.length; i++) {
+    const cells = lines[i].split(',').map((c) => c.trim());
+    const url = cells[urlIdx] ?? '';
+    const kind = (cells[kindIdx] ?? '').toLowerCase();
+    const label = labelIdx >= 0 ? (cells[labelIdx] ?? '') : '';
+
+    if (!url || !/^https?:\/\/.+/.test(url)) {
+      invalidCount++;
+      invalidReasons.push(`Row ${i + 1}: invalid URL`);
+      continue;
+    }
+    if (kind !== 'scholarship' && kind !== 'job') {
+      invalidCount++;
+      invalidReasons.push(`Row ${i + 1}: bad kind "${kind}" (must be scholarship or job)`);
+      continue;
+    }
+    const norm = normalize(url);
+    if (existingNorm.has(norm) || seenInFile.has(norm)) {
+      duplicateCount++;
+      continue;
+    }
+    seenInFile.add(norm);
+    valid.push({ url, kind: kind as 'scholarship' | 'job', label });
+  }
+
+  return { valid, invalidCount, invalidReasons, duplicateCount };
+}
+
 function CandidateUrlsCard() {
   const qc = useQueryClient();
   const [addUrl, setAddUrl] = useState('');
@@ -293,6 +350,11 @@ function CandidateUrlsCard() {
   const [addLabel, setAddLabel] = useState('');
   const [scanResults, setScanResults] = useState<ScanResult[] | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [csvPreview, setCsvPreview] = useState<CsvPreview | null>(null);
+  const [csvFileName, setCsvFileName] = useState<string>('');
+  const [csvImportMsg, setCsvImportMsg] = useState<string | null>(null);
+  const [csvImportError, setCsvImportError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: candidates = [], isLoading } = useQuery<CandidateUrl[]>({
     queryKey: CQ,
@@ -334,6 +396,37 @@ function CandidateUrlsCard() {
       setScanResults(null);
     }
   });
+
+  const bulkImportMut = useMutation({
+    mutationFn: async (items: CsvPreviewRow[]) => {
+      const res = await api.post('/admin/ingest/candidates/bulk', { items });
+      return res.data.data as { added: number; skipped: number };
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: CQ });
+      setCsvPreview(null);
+      setCsvFileName('');
+      setCsvImportMsg(`Imported ${data.added} URL${data.added !== 1 ? 's' : ''}${data.skipped > 0 ? ` (${data.skipped} skipped)` : ''}.`);
+      setCsvImportError(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    },
+    onError: (e: any) => {
+      setCsvImportError(e?.response?.data?.error?.message ?? e?.message ?? 'Import failed');
+    }
+  });
+
+  const handleCsvFile = (file: File) => {
+    setCsvFileName(file.name);
+    setCsvImportMsg(null);
+    setCsvImportError(null);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      const preview = parseCandidateCsv(text, candidates);
+      setCsvPreview(preview);
+    };
+    reader.readAsText(file);
+  };
 
   const busy = addMut.isPending || removeMut.isPending;
   const scanning = scanMut.isPending;
@@ -422,6 +515,57 @@ function CandidateUrlsCard() {
           {(addMut.error as any)?.response?.data?.error?.message ?? 'Failed to add URL'}
         </div>
       )}
+
+      {/* CSV Upload */}
+      <div className="border-t border-[var(--border)] pt-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold hover:bg-black/5 dark:hover:bg-white/5">
+            <Upload size={13} />
+            {csvFileName ? csvFileName : 'Upload CSV'}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv"
+              className="sr-only"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleCsvFile(f); }}
+            />
+          </label>
+          <span className="text-xs text-[var(--muted)]">Columns: <code>url,kind,label</code> (kind must be <em>scholarship</em> or <em>job</em>)</span>
+        </div>
+
+        {csvPreview && (
+          <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-4 py-3 space-y-2">
+            <p className="text-sm font-semibold">
+              {csvPreview.valid.length} valid row{csvPreview.valid.length !== 1 ? 's' : ''}
+              {csvPreview.invalidCount > 0 && <span className="ml-2 text-rose-500">, {csvPreview.invalidCount} invalid</span>}
+              {csvPreview.duplicateCount > 0 && <span className="ml-2 text-amber-600">, {csvPreview.duplicateCount} duplicate{csvPreview.duplicateCount !== 1 ? 's' : ''} (already in list)</span>}
+            </p>
+            {csvPreview.invalidReasons.slice(0, 3).map((r, i) => (
+              <p key={i} className="text-xs text-rose-500">{r}</p>
+            ))}
+            {csvPreview.valid.length > 0 && (
+              <button
+                className="btn-primary disabled:opacity-50 text-sm"
+                disabled={bulkImportMut.isPending}
+                onClick={() => bulkImportMut.mutate(csvPreview.valid)}
+              >
+                {bulkImportMut.isPending ? 'Importing…' : `Import ${csvPreview.valid.length} valid URL${csvPreview.valid.length !== 1 ? 's' : ''}`}
+              </button>
+            )}
+          </div>
+        )}
+
+        {csvImportMsg && (
+          <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300">
+            {csvImportMsg}
+          </div>
+        )}
+        {csvImportError && (
+          <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-400">
+            {csvImportError}
+          </div>
+        )}
+      </div>
 
       {/* Scan button */}
       <div className="flex items-center gap-3">

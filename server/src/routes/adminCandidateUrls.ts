@@ -105,6 +105,48 @@ router.delete('/:encodedUrl', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// POST /api/admin/ingest/candidates/bulk
+// Bulk-import candidate URLs from a parsed CSV. Dedupes against existing list.
+const bulkImportSchema = z.object({
+  items: z.array(z.object({
+    url: z.string().url('Each item must have a valid URL'),
+    kind: z.enum(['scholarship', 'job']),
+    label: z.string().optional()
+  })).min(1, 'items must not be empty')
+});
+
+router.post('/bulk', async (req, res, next) => {
+  try {
+    const parsed = bulkImportSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: parsed.error.errors[0]?.message ?? 'Invalid body' } });
+    }
+    const { items } = parsed.data;
+    const normalize = (u: string) => u.toLowerCase().replace(/\/+$/, '');
+    const data = await getCandidates();
+    const existingNorm = new Set(data.urls.map((c) => normalize(c.url)));
+
+    let added = 0;
+    let skipped = 0;
+    for (const item of items) {
+      const n = normalize(item.url);
+      if (existingNorm.has(n)) {
+        skipped++;
+      } else {
+        data.urls.push({ url: item.url, kind: item.kind, label: item.label });
+        existingNorm.add(n);
+        added++;
+      }
+    }
+
+    if (added > 0) {
+      await saveCandidates(data);
+    }
+
+    res.json({ success: true, data: { added, skipped } });
+  } catch (e) { next(e); }
+});
+
 // POST /api/admin/ingest/candidates/scan
 type ScanResult = {
   url: string;
