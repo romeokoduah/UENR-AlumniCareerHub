@@ -104,12 +104,15 @@ const createSchema = z.object({
 router.post('/', requireAuth, validate(createSchema), async (req, res, next) => {
   try {
     const data = req.body;
+    const isAdmin = req.auth!.role === 'ADMIN';
     const item = await prisma.scholarship.create({
       data: {
         ...data,
         deadline: new Date(data.deadline),
         submittedById: req.auth!.sub,
-        isApproved: req.auth!.role === 'ADMIN'
+        isApproved: isAdmin,
+        // Admin posts skip the review queue and publish immediately.
+        ...(isAdmin && { source: 'ADMIN', status: 'PUBLISHED' })
       }
     });
     res.status(201).json({ success: true, data: item });

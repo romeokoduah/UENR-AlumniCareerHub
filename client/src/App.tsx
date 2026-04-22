@@ -13,6 +13,7 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const OpportunitiesPage = lazy(() => import('./pages/OpportunitiesPage'));
 const OpportunityDetailPage = lazy(() => import('./pages/OpportunityDetailPage'));
 const PostOpportunityPage = lazy(() => import('./pages/PostOpportunityPage'));
+const PostScholarshipPage = lazy(() => import('./pages/PostScholarshipPage'));
 const ScholarshipsPage = lazy(() => import('./pages/ScholarshipsPage'));
 const MentorsPage = lazy(() => import('./pages/MentorsPage'));
 const EventsPage = lazy(() => import('./pages/EventsPage'));
@@ -97,6 +98,7 @@ export default function App() {
           <Route path="opportunities/new" element={<RequireAuth><PostOpportunityPage /></RequireAuth>} />
           <Route path="opportunities/:id" element={<OpportunityDetailPage />} />
           <Route path="scholarships" element={<ScholarshipsPage />} />
+          <Route path="scholarships/new" element={<RequireAuth><PostScholarshipPage /></RequireAuth>} />
           <Route path="mentors" element={<MentorsPage />} />
           <Route path="events" element={<EventsPage />} />
           <Route path="directory" element={<RequireAuth><DirectoryPage /></RequireAuth>} />

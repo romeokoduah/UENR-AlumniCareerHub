@@ -315,11 +315,19 @@ const createSchema = z.object({
 router.post('/', requireAuth, validate(createSchema), async (req, res, next) => {
   try {
     const data = req.body;
+    const isAdmin = req.auth!.role === 'ADMIN';
     const opp = await prisma.opportunity.create({
       data: {
         ...data,
         deadline: new Date(data.deadline),
-        postedById: req.auth!.sub
+        postedById: req.auth!.sub,
+        // Admin posts skip the review queue and go live immediately.
+        ...(isAdmin && {
+          source: 'ADMIN',
+          status: 'PUBLISHED',
+          isApproved: true,
+          isActive: true
+        })
       }
     });
     res.status(201).json({ success: true, data: opp });
