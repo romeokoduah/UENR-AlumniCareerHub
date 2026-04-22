@@ -18,6 +18,7 @@ import {
   GraduationCap, BookOpen, HelpCircle, Trophy, Globe, Flag, CheckSquare
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { ModerationHistoryPanel } from '../../components/admin/ModerationHistoryPanel';
 
 type Kind =
   | 'opportunity'
@@ -376,6 +377,9 @@ export default function AdminModerationPage() {
           />
         )}
       </AnimatePresence>
+
+      {/* History panel — no kind filter since this page covers all kinds */}
+      <ModerationHistoryPanel />
     </div>
   );
 }

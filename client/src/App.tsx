@@ -60,6 +60,7 @@ const AdminDataPage = lazy(() => import('./pages/admin/AdminDataPage'));
 const AdminServicesPage = lazy(() => import('./pages/admin/AdminServicesPage'));
 const AdminAtsOversightPage = lazy(() => import('./pages/admin/AdminAtsOversightPage'));
 const AdminIngestHealthPage = lazy(() => import('./pages/admin/AdminIngestHealthPage'));
+const AdminModerationHistoryPage = lazy(() => import('./pages/admin/AdminModerationHistoryPage'));
 const AdminSitePage = lazy(() => import('./pages/admin/AdminSitePage'));
 const AdminSystemPage = lazy(() => import('./pages/admin/AdminSystemPage'));
 const PublicTranscriptVerifyPage = lazy(() => import('./pages/PublicTranscriptVerifyPage'));
@@ -148,6 +149,7 @@ export default function App() {
             <Route path="scholarships-review" element={<AdminScholarshipsReviewPage />} />
             <Route path="opportunities-review" element={<AdminOpportunitiesReviewPage />} />
             <Route path="ingest-health" element={<AdminIngestHealthPage />} />
+            <Route path="moderation-history" element={<AdminModerationHistoryPage />} />
           </Route>
           <Route path="*" element={<NotFoundPage />} />
         </Route>

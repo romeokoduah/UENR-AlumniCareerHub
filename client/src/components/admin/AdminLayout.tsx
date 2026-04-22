@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Users as UsersIcon, ShieldAlert, Database,
   HeartHandshake, BriefcaseBusiness, SlidersHorizontal, BarChart3,
   Activity, Briefcase, Image as ImageIcon, BookOpen, Trophy,
-  Crown, GraduationCap
+  Crown, GraduationCap, History
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuthStore } from '../../store/auth';
@@ -29,6 +29,7 @@ const SECTIONS: {
   { to: '/admin/learning', label: 'Learning queue', icon: BookOpen },
   { to: '/admin/achievements', label: 'Achievements queue', icon: Trophy },
   { to: '/admin/moderation', label: 'Universal moderation', icon: ShieldAlert, status: 'soon' },
+  { to: '/admin/moderation-history', label: 'History', icon: History },
   { to: '/admin/data', label: 'Tool data', icon: Database, status: 'soon' },
   { to: '/admin/services', label: 'Career Services', icon: HeartHandshake, status: 'soon' },
   { to: '/admin/ats', label: 'ATS oversight', icon: BriefcaseBusiness, status: 'soon' },

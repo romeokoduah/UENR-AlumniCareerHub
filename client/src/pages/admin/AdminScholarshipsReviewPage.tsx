@@ -13,6 +13,7 @@ import {
   ArrowLeft, GraduationCap, Check, X, ExternalLink, Pencil, Clock, CheckSquare
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { ModerationHistoryPanel } from '../../components/admin/ModerationHistoryPanel';
 import type { Scholarship } from '../../types';
 
 const QK = ['admin', 'scholarships', 'pending'] as const;
@@ -390,6 +391,8 @@ export default function AdminScholarshipsReviewPage() {
           ))}
         </div>
       )}
+
+      <ModerationHistoryPanel kind="scholarship" pendingQueryKey={QK} />
     </div>
   );
 }

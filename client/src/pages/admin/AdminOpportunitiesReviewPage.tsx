@@ -14,6 +14,7 @@ import {
   Globe, Building2, CheckSquare
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { ModerationHistoryPanel } from '../../components/admin/ModerationHistoryPanel';
 import type { Opportunity } from '../../types';
 
 const QK = ['admin', 'opportunities', 'pending'] as const;
@@ -458,6 +459,8 @@ export default function AdminOpportunitiesReviewPage() {
           ))}
         </div>
       )}
+
+      <ModerationHistoryPanel kind="opportunity" pendingQueryKey={QK} />
     </div>
   );
 }
