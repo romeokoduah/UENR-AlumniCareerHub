@@ -4,6 +4,46 @@ import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
+  // ---- Scholarships ingestion seeds ----------------------------------
+  // These upserts run on every seed invocation (idempotent) so they are
+  // placed before the early-return guard below.
+
+  await prisma.user.upsert({
+    where: { email: 'ingestion-bot@uenr.local' },
+    update: {},
+    create: {
+      email: 'ingestion-bot@uenr.local',
+      firstName: 'Ingestion',
+      lastName: 'Bot',
+      // System accounts can never log in — bcrypt hash of a random 64-byte value
+      // we immediately discard. Keeps the NOT NULL constraint happy without
+      // creating a usable password.
+      passwordHash: await bcrypt.hash(
+        (await import('node:crypto')).randomBytes(64).toString('hex'),
+        4
+      ),
+      role: 'ADMIN',
+      isVerified: true
+    }
+  });
+
+  const existingFlags = await prisma.siteContent.findUnique({ where: { key: 'feature-flags' } });
+
+  await prisma.siteContent.upsert({
+    where: { key: 'feature-flags' },
+    update: {
+      data: {
+        // Preserve any existing flags by spreading; Prisma JSON merge is manual.
+        ...((existingFlags?.data as object | undefined) ?? {}),
+        'scholarships-ingest-enabled': false
+      }
+    },
+    create: {
+      key: 'feature-flags',
+      data: { 'scholarships-ingest-enabled': false }
+    }
+  });
+
   // Idempotency guard — if admin already exists, assume seeded and bail.
   // Lets us safely run `bun prisma/seed.ts` on every deploy.
   const existing = await prisma.user.findUnique({ where: { email: 'admin@uenr.edu.gh' } });
