@@ -48,6 +48,36 @@ async function main() {
     }
   });
 
+  // ---- Ingest candidate URLs seed (idempotent) ---------------------------
+  // Preserves any admin-edited urls array by spreading the existing list;
+  // the default urls are only applied on first create.
+  {
+    const DEFAULT_CANDIDATE_URLS = [
+      { url: 'https://opportunitydesk.org/feed/', kind: 'scholarship', label: 'Opportunity Desk' },
+      { url: 'https://www.scholarshipregion.com/feed/', kind: 'scholarship', label: 'Scholarship Region' },
+      { url: 'https://www.opportunitiesforafricans.com/feed/', kind: 'scholarship', label: 'Opportunities For Africans' },
+      { url: 'https://www.scholars4dev.com/feed/', kind: 'scholarship', label: 'Scholars4Dev' },
+      { url: 'https://opportunitiesforyouth.org/feed/', kind: 'scholarship', label: 'Opportunities For Youth' },
+      { url: 'https://cscuk.fcdo.gov.uk/scholarships/', kind: 'scholarship', label: 'Commonwealth Scholarships' },
+      { url: 'https://www.rhodeshouse.ox.ac.uk/scholarships/', kind: 'scholarship', label: 'Rhodes Trust' },
+      { url: 'https://www.schwarzmanscholars.org/', kind: 'scholarship', label: 'Schwarzman Scholars' }
+    ];
+    const existingCandidates = await prisma.siteContent.findUnique({ where: { key: 'ingest-candidate-urls' } });
+    await prisma.siteContent.upsert({
+      where: { key: 'ingest-candidate-urls' },
+      update: {
+        // Preserve any admin-edited urls — spread existing on update.
+        data: {
+          urls: (existingCandidates?.data as { urls?: unknown[] } | null)?.urls ?? DEFAULT_CANDIDATE_URLS
+        }
+      },
+      create: {
+        key: 'ingest-candidate-urls',
+        data: { urls: DEFAULT_CANDIDATE_URLS }
+      }
+    });
+  }
+
   // Idempotency guard — if admin already exists, assume seeded and bail.
   // Lets us safely run `bun prisma/seed.ts` on every deploy.
   const existing = await prisma.user.findUnique({ where: { email: 'admin@uenr.edu.gh' } });

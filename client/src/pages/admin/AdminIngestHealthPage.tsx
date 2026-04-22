@@ -4,7 +4,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Activity, CheckCircle2, XCircle, Clock, Play, Link2 } from 'lucide-react';
+import { Activity, CheckCircle2, XCircle, Clock, Play, Link2, Scan, Plus, X as XIcon } from 'lucide-react';
 import { api } from '../../services/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -265,6 +265,220 @@ function AdhocIngestCard() {
   );
 }
 
+// ── Candidate URLs card ───────────────────────────────────────────────────────
+
+type CandidateUrl = {
+  url: string;
+  kind: 'scholarship' | 'job';
+  label?: string;
+};
+
+type ScanResult = {
+  url: string;
+  kind: string;
+  label?: string;
+  itemsFound: number;
+  itemsPublished: number;
+  itemsQueued: number;
+  itemsRejected: number;
+  error?: string;
+};
+
+const CQ = ['admin', 'ingest-candidates'] as const;
+
+function CandidateUrlsCard() {
+  const qc = useQueryClient();
+  const [addUrl, setAddUrl] = useState('');
+  const [addKind, setAddKind] = useState<'scholarship' | 'job'>('scholarship');
+  const [addLabel, setAddLabel] = useState('');
+  const [scanResults, setScanResults] = useState<ScanResult[] | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+
+  const { data: candidates = [], isLoading } = useQuery<CandidateUrl[]>({
+    queryKey: CQ,
+    queryFn: async () => (await api.get('/admin/ingest/candidates')).data.data
+  });
+
+  const addMut = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/admin/ingest/candidates', {
+        url: addUrl,
+        kind: addKind,
+        label: addLabel || undefined
+      });
+      return res.data.data as CandidateUrl[];
+    },
+    onSuccess: (data) => {
+      qc.setQueryData(CQ, data);
+      setAddUrl('');
+      setAddLabel('');
+    }
+  });
+
+  const removeMut = useMutation({
+    mutationFn: async (url: string) => {
+      const res = await api.delete(`/admin/ingest/candidates/${encodeURIComponent(url)}`);
+      return res.data.data as CandidateUrl[];
+    },
+    onSuccess: (data) => qc.setQueryData(CQ, data)
+  });
+
+  const scanMut = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/admin/ingest/candidates/scan');
+      return res.data.data.results as ScanResult[];
+    },
+    onSuccess: (results) => { setScanResults(results); setScanError(null); },
+    onError: (e: any) => {
+      setScanError(e?.response?.data?.error?.message ?? e?.message ?? 'Scan failed');
+      setScanResults(null);
+    }
+  });
+
+  const busy = addMut.isPending || removeMut.isPending;
+  const scanning = scanMut.isPending;
+
+  return (
+    <div className="card space-y-4">
+      <div className="flex items-center gap-2">
+        <Scan size={16} className="text-[#065F46]" />
+        <div className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">Scan candidate sources</div>
+      </div>
+
+      {/* URL list */}
+      {isLoading ? (
+        <div className="h-8 skeleton rounded" />
+      ) : candidates.length === 0 ? (
+        <p className="text-sm text-[var(--muted)]">No candidate URLs configured yet.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {candidates.map((c) => (
+            <li key={c.url} className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm">
+              <span className="flex-1 min-w-0 truncate font-medium">
+                {c.label ? <><span>{c.label}</span> <span className="text-[var(--muted)] text-xs">{c.url}</span></> : c.url}
+              </span>
+              <span className="rounded-full bg-[#065F46]/10 px-1.5 py-0.5 text-[10px] font-bold text-[#065F46] dark:bg-[#84CC16]/15 dark:text-[#84CC16] shrink-0">
+                {c.kind}
+              </span>
+              <button
+                onClick={() => removeMut.mutate(c.url)}
+                disabled={busy}
+                className="shrink-0 rounded-full p-0.5 text-[var(--muted)] hover:text-rose-500 disabled:opacity-50"
+                aria-label="Remove"
+              >
+                <XIcon size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Add URL inline form */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <div className="flex-1">
+          <label className="mb-1 block text-xs font-semibold text-[var(--muted)]">Add URL</label>
+          <input
+            type="url"
+            className="input w-full"
+            placeholder="https://example.com/scholarships/feed/"
+            value={addUrl}
+            onChange={(e) => setAddUrl(e.target.value)}
+            disabled={busy}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-[var(--muted)]">Kind</label>
+          <select
+            className="input"
+            value={addKind}
+            onChange={(e) => setAddKind(e.target.value as 'scholarship' | 'job')}
+            disabled={busy}
+          >
+            <option value="scholarship">Scholarship</option>
+            <option value="job">Job</option>
+          </select>
+        </div>
+        <div className="flex-1">
+          <label className="mb-1 block text-xs font-semibold text-[var(--muted)]">Label (optional)</label>
+          <input
+            className="input w-full"
+            placeholder="My scholarship site"
+            value={addLabel}
+            onChange={(e) => setAddLabel(e.target.value)}
+            disabled={busy}
+          />
+        </div>
+        <button
+          className="btn-primary shrink-0 inline-flex items-center gap-1.5 disabled:opacity-50"
+          disabled={busy || !addUrl.trim()}
+          onClick={() => addMut.mutate()}
+        >
+          <Plus size={14} /> Add
+        </button>
+      </div>
+
+      {addMut.isError && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-400">
+          {(addMut.error as any)?.response?.data?.error?.message ?? 'Failed to add URL'}
+        </div>
+      )}
+
+      {/* Scan button */}
+      <div className="flex items-center gap-3">
+        <button
+          className="btn-primary disabled:opacity-50"
+          disabled={scanning || candidates.length === 0}
+          onClick={() => scanMut.mutate()}
+        >
+          {scanning ? 'Scanning…' : 'Scan all candidate sources now'}
+        </button>
+        {scanning && <span className="text-xs text-[var(--muted)]">This may take a while…</span>}
+      </div>
+
+      {scanError && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-400">
+          {scanError}
+        </div>
+      )}
+
+      {scanResults && (
+        <div className="rounded-lg border border-[var(--border)] bg-[var(--bg)] overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="border-b border-[var(--border)] text-[10px] font-bold uppercase tracking-wider text-[var(--muted)] text-left">
+              <tr>
+                <th className="px-3 py-2">Source</th>
+                <th className="px-3 py-2 text-center">Found</th>
+                <th className="px-3 py-2 text-center">Published</th>
+                <th className="px-3 py-2 text-center">Queued</th>
+                <th className="px-3 py-2 text-center">Rejected</th>
+                <th className="px-3 py-2">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scanResults.map((r, i) => (
+                <tr key={i} className="border-b border-[var(--border)]/50 last:border-b-0">
+                  <td className="px-3 py-2 font-medium max-w-xs truncate">{r.label ?? r.url}</td>
+                  <td className="px-3 py-2 text-center">{r.itemsFound}</td>
+                  <td className="px-3 py-2 text-center text-emerald-600 font-semibold">{r.itemsPublished}</td>
+                  <td className="px-3 py-2 text-center text-amber-600">{r.itemsQueued}</td>
+                  <td className="px-3 py-2 text-center text-rose-500">{r.itemsRejected}</td>
+                  <td className="px-3 py-2">
+                    {r.error ? (
+                      <span className="text-rose-500">{r.error}</span>
+                    ) : (
+                      <span className="text-emerald-600 font-semibold">OK</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Run-pipeline-now card ─────────────────────────────────────────────────────
 
 function RunNowCard() {
@@ -399,6 +613,9 @@ export default function AdminIngestHealthPage() {
 
       {/* Ad-hoc ingest */}
       <AdhocIngestCard />
+
+      {/* Candidate URL scanner */}
+      <CandidateUrlsCard />
 
       {/* Run pipeline now */}
       <RunNowCard />
