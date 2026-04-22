@@ -66,6 +66,8 @@ import adminOpportunitiesReviewRoutes from './routes/adminOpportunitiesReview.js
 import adminIngestStatsRoutes from './routes/adminIngestStats.js';
 import adminIngestAdhocRoutes from './routes/adminIngestAdhoc.js';
 import adminIngestRunNowRoutes from './routes/adminIngestRunNow.js';
+import adminModerationHistoryRoutes from './routes/adminModerationHistory.js';
+import adminCandidateUrlsRoutes from './routes/adminCandidateUrls.js';
 import { UPLOAD_DIR } from './lib/upload.js';
 
 export function createApp() {
@@ -134,6 +136,8 @@ export function createApp() {
   app.use('/api/admin/ingest-stats', adminIngestStatsRoutes);
   app.use('/api/admin/ingest/adhoc', adminIngestAdhocRoutes);
   app.use('/api/admin/ingest/run-now', adminIngestRunNowRoutes);
+  app.use('/api/admin/moderation-history', adminModerationHistoryRoutes);
+  app.use('/api/admin/ingest/candidates', adminCandidateUrlsRoutes);
 
   app.use(errorHandler);
 

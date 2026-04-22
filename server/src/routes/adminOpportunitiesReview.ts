@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
+import { logAudit } from '../lib/audit.js';
 
 const router = Router();
 
@@ -39,9 +40,23 @@ const bulkSchema = z.object({
 router.post('/bulk/approve', validate(bulkSchema), async (req, res, next) => {
   try {
     const { ids } = req.body as z.infer<typeof bulkSchema>;
+    const previous = await prisma.opportunity.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, status: true, isApproved: true }
+    });
     const result = await prisma.opportunity.updateMany({
       where: { id: { in: ids }, status: 'PENDING_REVIEW' },
       data: { status: 'PUBLISHED', isApproved: true }
+    });
+    await logAudit({
+      actorId: req.auth!.sub,
+      action: 'opportunity.bulk_approve',
+      metadata: {
+        ids,
+        updated: result.count,
+        requested: ids.length,
+        previousStates: previous.map((r) => ({ id: r.id, status: r.status, isApproved: r.isApproved }))
+      }
     });
     res.json({ success: true, data: { updated: result.count, requested: ids.length } });
   } catch (e) { next(e); }
@@ -52,9 +67,23 @@ router.post('/bulk/approve', validate(bulkSchema), async (req, res, next) => {
 router.post('/bulk/reject', validate(bulkSchema), async (req, res, next) => {
   try {
     const { ids } = req.body as z.infer<typeof bulkSchema>;
+    const previous = await prisma.opportunity.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, status: true, isApproved: true }
+    });
     const result = await prisma.opportunity.updateMany({
       where: { id: { in: ids }, status: 'PENDING_REVIEW' },
       data: { status: 'REJECTED', isApproved: false }
+    });
+    await logAudit({
+      actorId: req.auth!.sub,
+      action: 'opportunity.bulk_reject',
+      metadata: {
+        ids,
+        updated: result.count,
+        requested: ids.length,
+        previousStates: previous.map((r) => ({ id: r.id, status: r.status, isApproved: r.isApproved }))
+      }
     });
     res.json({ success: true, data: { updated: result.count, requested: ids.length } });
   } catch (e) { next(e); }
@@ -68,6 +97,13 @@ router.post('/:id/approve', async (req, res, next) => {
     if (!existing) {
       return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Opportunity not found' } });
     }
+    await logAudit({
+      actorId: req.auth!.sub,
+      action: 'opportunity.approve',
+      targetType: 'Opportunity',
+      targetId: req.params.id,
+      metadata: { previousStatus: existing.status, previousIsApproved: existing.isApproved }
+    });
     const updated = await prisma.opportunity.update({
       where: { id: req.params.id },
       data: { status: 'PUBLISHED', isApproved: true }
@@ -84,6 +120,13 @@ router.post('/:id/reject', async (req, res, next) => {
     if (!existing) {
       return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Opportunity not found' } });
     }
+    await logAudit({
+      actorId: req.auth!.sub,
+      action: 'opportunity.reject',
+      targetType: 'Opportunity',
+      targetId: req.params.id,
+      metadata: { previousStatus: existing.status, previousIsApproved: existing.isApproved }
+    });
     const updated = await prisma.opportunity.update({
       where: { id: req.params.id },
       data: { status: 'REJECTED', isApproved: false }
