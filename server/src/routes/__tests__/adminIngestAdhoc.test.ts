@@ -105,12 +105,13 @@ const GOOD_RSS = `<?xml version="1.0"?>
       }
     });
     const userToken = signToken({ sub: user.id, role: 'STUDENT' }, { expiresIn: '1h' });
-    await prisma.user.deleteMany({ where: { email: 'adhoc-test-regular@test.internal' } });
 
     const res = await request(app)
       .post('/api/admin/ingest/adhoc')
       .set('Authorization', `Bearer ${userToken}`)
       .send({ url: 'https://example.com', kind: 'scholarship' });
+
+    await prisma.user.deleteMany({ where: { email: 'adhoc-test-regular@test.internal' } });
     expect(res.status).toBe(403);
   });
 

@@ -225,12 +225,13 @@ const ENABLED = !!process.env.DATABASE_URL;
       }
     });
     const studentToken = signToken({ sub: user.id, role: 'STUDENT' }, { expiresIn: '1h' });
-    await prisma.user.deleteMany({ where: { email: 'run-now-student@test.internal' } });
 
     const res = await request(app)
       .post('/api/admin/ingest/run-now')
       .set('Authorization', `Bearer ${studentToken}`)
       .send({ which: 'all' });
+
+    await prisma.user.deleteMany({ where: { email: 'run-now-student@test.internal' } });
     expect(res.status).toBe(403);
   });
 
@@ -251,13 +252,13 @@ const ENABLED = !!process.env.DATABASE_URL;
       }
     });
     const adminToken = signToken({ sub: admin.id, role: 'ADMIN' }, { expiresIn: '1h' });
-    await prisma.user.deleteMany({ where: { email: 'run-now-admin@test.internal' } });
 
     const res = await request(app)
       .post('/api/admin/ingest/run-now')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ which: 'all' });
 
+    await prisma.user.deleteMany({ where: { email: 'run-now-admin@test.internal' } });
     expect(res.status).toBe(200);
     expect(res.body.data.scholarships.skipped).toBe('flag-off');
     expect(res.body.data.opportunities.skipped).toBe('flag-off');
@@ -280,13 +281,13 @@ const ENABLED = !!process.env.DATABASE_URL;
       }
     });
     const adminToken = signToken({ sub: admin.id, role: 'ADMIN' }, { expiresIn: '1h' });
-    await prisma.user.deleteMany({ where: { email: 'run-now-admin2@test.internal' } });
 
     const res = await request(app)
       .post('/api/admin/ingest/run-now')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ which: 'scholarships' });
 
+    await prisma.user.deleteMany({ where: { email: 'run-now-admin2@test.internal' } });
     expect(res.status).toBe(200);
     // opportunities branch should be "not-selected"
     expect(res.body.data.opportunities.skipped).toBe('not-selected');
