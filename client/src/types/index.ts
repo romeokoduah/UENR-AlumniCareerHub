@@ -41,6 +41,15 @@ export type Opportunity = {
   applicationUrl?: string;
   postedBy?: { firstName: string; lastName: string; avatar?: string };
   createdAt: string;
+  // Ingestion / admin-review fields (optional so existing rows still parse)
+  source?: string;
+  status?: string;
+  sourceUrl?: string;
+  sourceName?: string;
+  confidence?: number | null;
+  verifierReason?: string | null;
+  category?: Record<string, unknown> | null;
+  ingestedAt?: string | null;
 };
 
 export type Scholarship = {
