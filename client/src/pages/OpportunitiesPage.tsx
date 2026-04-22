@@ -22,16 +22,36 @@ const LOCATIONS = [
   { value: 'ONSITE', label: 'Onsite' },
   { value: 'HYBRID', label: 'Hybrid' }
 ];
+const INDUSTRIES = [
+  { value: '', label: 'All industries' },
+  { value: 'IT Jobs', label: 'IT Jobs' },
+  { value: 'Engineering Jobs', label: 'Engineering Jobs' },
+  { value: 'Healthcare & Nursing Jobs', label: 'Healthcare & Nursing' },
+  { value: 'Sales Jobs', label: 'Sales Jobs' },
+  { value: 'Accounting & Finance Jobs', label: 'Accounting & Finance' },
+  { value: 'Admin Jobs', label: 'Admin Jobs' },
+  { value: 'Consultancy Jobs', label: 'Consultancy Jobs' },
+  { value: 'Teaching Jobs', label: 'Teaching Jobs' },
+  { value: 'Other/General', label: 'Other / General' }
+];
+const ORIGINS = [
+  { value: '', label: 'All sources' },
+  { value: 'community', label: 'UENR community' },
+  { value: 'aggregator', label: 'Aggregator feeds' }
+];
 
 export default function OpportunitiesPage() {
   const user = useAuthStore((s) => s.user);
   const [q, setQ] = useState('');
   const [type, setType] = useState('');
   const [locationType, setLocationType] = useState('');
+  const [industry, setIndustry] = useState('');
+  const [origin, setOrigin] = useState('');
 
   const { data = [], isLoading } = useQuery<Opportunity[]>({
-    queryKey: ['opportunities', q, type, locationType],
-    queryFn: async () => (await api.get('/opportunities', { params: { q, type, locationType } })).data.data
+    queryKey: ['opportunities', q, type, locationType, industry, origin],
+    queryFn: async () =>
+      (await api.get('/opportunities', { params: { q, type, locationType, industry, origin } })).data.data
   });
 
   return (
@@ -58,6 +78,12 @@ export default function OpportunitiesPage() {
         </select>
         <select className="input max-w-[180px]" value={locationType} onChange={(e) => setLocationType(e.target.value)}>
           {LOCATIONS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </select>
+        <select className="input max-w-[200px]" value={industry} onChange={(e) => setIndustry(e.target.value)}>
+          {INDUSTRIES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </select>
+        <select className="input max-w-[180px]" value={origin} onChange={(e) => setOrigin(e.target.value)}>
+          {ORIGINS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
         </select>
       </div>
 
