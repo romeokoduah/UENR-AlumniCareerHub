@@ -23,6 +23,40 @@ function cronAuth(req: import('express').Request): boolean {
   return hdr === `Bearer ${expected}`;
 }
 
+// Shared drain body — used by /scholarships/run (inline drain, after enqueue)
+// and by the standalone /drain endpoint (still exposed for manual runs or a
+// future Pro-tier multi-cron schedule).
+async function drainBatch(): Promise<{
+  processed: number;
+  totals: { itemsPublished: number; itemsQueued: number; itemsRejected: number; sourcesOk: number; sourcesFailed: number };
+}> {
+  const batch = await pickBatch(DRAIN_BATCH_SIZE);
+  const totals = { itemsPublished: 0, itemsQueued: 0, itemsRejected: 0, sourcesOk: 0, sourcesFailed: 0 };
+  let processed = 0;
+  for (const job of batch) {
+    await markRunning(job.id);
+    const adapter = getAdapter(job.source);
+    if (!adapter) {
+      await markFailed(job.id, `unknown adapter: ${job.source}`);
+      totals.sourcesFailed++;
+      continue;
+    }
+    try {
+      const r = await runPipelineForAdapter(adapter);
+      await markDone(job.id, { itemsFound: r.itemsFound, itemsPublished: r.itemsPublished, itemsQueued: r.itemsQueued });
+      totals.itemsPublished += r.itemsPublished;
+      totals.itemsQueued += r.itemsQueued;
+      totals.itemsRejected += r.itemsRejected;
+      totals.sourcesOk++;
+    } catch (err) {
+      await markFailed(job.id, (err as Error).message);
+      totals.sourcesFailed++;
+    }
+    processed++;
+  }
+  return { processed, totals };
+}
+
 router.post('/scholarships/run', async (req, res, next) => {
   try {
     if (!cronAuth(req)) {
@@ -34,7 +68,15 @@ router.post('/scholarships/run', async (req, res, next) => {
     const run = await createRun(req.query.manual === 'true' ? 'manual:api' : 'cron');
     const adapters = listAdapters();
     await enqueueJobs(run.id, adapters.map((a) => a.id));
-    return res.json({ success: true, data: { runId: run.id, enqueued: adapters.length } });
+    // Vercel Hobby allows only ONE cron per path per day; to cover the full
+    // enqueue → drain flow in a single daily invocation, drain inline.
+    // DRAIN_BATCH_SIZE (6) is sized for the 60s function ceiling; Slice B
+    // may need a smarter multi-pass strategy once we have 18 adapters.
+    const drain = await drainBatch();
+    return res.json({
+      success: true,
+      data: { runId: run.id, enqueued: adapters.length, ...drain }
+    });
   } catch (e) { next(e); }
 });
 
@@ -46,31 +88,8 @@ router.post('/drain', async (req, res, next) => {
     if (!(await flagOn())) {
       return res.json({ success: true, data: { processed: 0, skipped: 'flag-off' } });
     }
-    const batch = await pickBatch(DRAIN_BATCH_SIZE);
-    let processed = 0;
-    const totals = { itemsPublished: 0, itemsQueued: 0, itemsRejected: 0, sourcesOk: 0, sourcesFailed: 0 };
-    for (const job of batch) {
-      await markRunning(job.id);
-      const adapter = getAdapter(job.source);
-      if (!adapter) {
-        await markFailed(job.id, `unknown adapter: ${job.source}`);
-        totals.sourcesFailed++;
-        continue;
-      }
-      try {
-        const r = await runPipelineForAdapter(adapter);
-        await markDone(job.id, { itemsFound: r.itemsFound, itemsPublished: r.itemsPublished, itemsQueued: r.itemsQueued });
-        totals.itemsPublished += r.itemsPublished;
-        totals.itemsQueued += r.itemsQueued;
-        totals.itemsRejected += r.itemsRejected;
-        totals.sourcesOk++;
-      } catch (err) {
-        await markFailed(job.id, (err as Error).message);
-        totals.sourcesFailed++;
-      }
-      processed++;
-    }
-    return res.json({ success: true, data: { processed, totals } });
+    const drain = await drainBatch();
+    return res.json({ success: true, data: drain });
   } catch (e) { next(e); }
 });
 

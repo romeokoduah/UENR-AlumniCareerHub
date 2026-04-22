@@ -11,7 +11,6 @@
   },
   "crons": [
     { "path": "/api/ingest/scholarships/run", "schedule": "0 3 * * *" },
-    { "path": "/api/ingest/drain",            "schedule": "5,15,25 3 * * *" },
     { "path": "/api/ingest/expire",           "schedule": "30 3 * * *" }
   ],
   "rewrites": [
