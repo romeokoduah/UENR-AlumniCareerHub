@@ -21,6 +21,7 @@ const InterviewPrepPage = lazy(() => import('./pages/InterviewPrepPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const AdminPage = lazy(() => import('./pages/AdminPage'));
 const AdminOpportunitiesPage = lazy(() => import('./pages/AdminOpportunitiesPage'));
+const AdminScholarshipsPage = lazy(() => import('./pages/AdminScholarshipsPage'));
 const AdminLandingEditorPage = lazy(() => import('./pages/AdminLandingEditorPage'));
 const CareerToolsHubPage = lazy(() => import('./pages/CareerToolsHubPage'));
 const CareerToolPlaceholderPage = lazy(() => import('./pages/CareerToolPlaceholderPage'));
@@ -136,6 +137,7 @@ export default function App() {
             <Route index element={<AdminPage />} />
             <Route path="users" element={<AdminUsersPage />} />
             <Route path="opportunities" element={<AdminOpportunitiesPage />} />
+            <Route path="scholarships" element={<AdminScholarshipsPage />} />
             <Route path="landing" element={<AdminLandingEditorPage />} />
             <Route path="learning" element={<AdminLearningModerationPage />} />
             <Route path="achievements" element={<AdminAchievementsModerationPage />} />

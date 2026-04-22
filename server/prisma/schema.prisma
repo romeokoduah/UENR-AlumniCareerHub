@@ -310,6 +310,7 @@ model Scholarship {
   submittedById  String?
   submittedBy    User?            @relation("PostedScholarships", fields: [submittedById], references: [id], onDelete: SetNull)
   isApproved     Boolean          @default(false)
+  isFeatured     Boolean          @default(false)
 
   source            ScholarshipSource @default(USER)
   status            ScholarshipStatus @default(PUBLISHED)

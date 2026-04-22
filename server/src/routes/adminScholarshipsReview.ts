@@ -17,6 +17,35 @@ const router = Router();
 
 router.use(requireAuth, requireRole('ADMIN'));
 
+// GET /api/admin/scholarships
+// Returns all scholarships for the general management page (up to 500).
+router.get('/', async (req, res, next) => {
+  try {
+    const { q, status } = req.query as Record<string, string>;
+    const now = new Date();
+    const items = await prisma.scholarship.findMany({
+      where: {
+        ...(status === 'approved' && { isApproved: true }),
+        ...(status === 'pending' && { isApproved: false }),
+        ...(status === 'expired' && { deadline: { lt: now } }),
+        ...(q && {
+          OR: [
+            { title: { contains: q, mode: 'insensitive' } },
+            { provider: { contains: q, mode: 'insensitive' } },
+            { description: { contains: q, mode: 'insensitive' } }
+          ]
+        })
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        submittedBy: { select: { id: true, firstName: true, lastName: true, email: true, role: true } }
+      },
+      take: 500
+    });
+    res.json({ success: true, data: items });
+  } catch (e) { next(e); }
+});
+
 // GET /api/admin/scholarships/pending
 // Returns up to 100 PENDING_REVIEW rows, newest first.
 router.get('/pending', async (req, res, next) => {
@@ -35,6 +64,48 @@ router.get('/pending', async (req, res, next) => {
 // interpret "bulk" as an :id param.
 const bulkSchema = z.object({
   ids: z.array(z.string()).min(1, 'ids must not be empty').max(100, 'ids must not exceed 100')
+});
+
+// ===== GENERAL-MANAGEMENT BULK ACTIONS (operate on any scholarship) =====
+
+// POST /api/admin/scholarships/bulk/unapprove
+router.post('/bulk/unapprove', validate(bulkSchema), async (req, res, next) => {
+  try {
+    const { ids } = req.body as z.infer<typeof bulkSchema>;
+    const result = await prisma.scholarship.updateMany({ where: { id: { in: ids } }, data: { isApproved: false } });
+    await logAudit({ actorId: req.auth!.sub, action: 'scholarship.bulk_unapprove', metadata: { ids, updated: result.count } });
+    res.json({ success: true, data: { updated: result.count, requested: ids.length } });
+  } catch (e) { next(e); }
+});
+
+// POST /api/admin/scholarships/bulk/feature
+router.post('/bulk/feature', validate(bulkSchema), async (req, res, next) => {
+  try {
+    const { ids } = req.body as z.infer<typeof bulkSchema>;
+    const result = await prisma.scholarship.updateMany({ where: { id: { in: ids } }, data: { isFeatured: true } });
+    await logAudit({ actorId: req.auth!.sub, action: 'scholarship.bulk_feature', metadata: { ids, updated: result.count } });
+    res.json({ success: true, data: { updated: result.count, requested: ids.length } });
+  } catch (e) { next(e); }
+});
+
+// POST /api/admin/scholarships/bulk/unfeature
+router.post('/bulk/unfeature', validate(bulkSchema), async (req, res, next) => {
+  try {
+    const { ids } = req.body as z.infer<typeof bulkSchema>;
+    const result = await prisma.scholarship.updateMany({ where: { id: { in: ids } }, data: { isFeatured: false } });
+    await logAudit({ actorId: req.auth!.sub, action: 'scholarship.bulk_unfeature', metadata: { ids, updated: result.count } });
+    res.json({ success: true, data: { updated: result.count, requested: ids.length } });
+  } catch (e) { next(e); }
+});
+
+// POST /api/admin/scholarships/bulk/delete
+router.post('/bulk/delete', validate(bulkSchema), async (req, res, next) => {
+  try {
+    const { ids } = req.body as z.infer<typeof bulkSchema>;
+    const result = await prisma.scholarship.deleteMany({ where: { id: { in: ids } } });
+    await logAudit({ actorId: req.auth!.sub, action: 'scholarship.bulk_delete', metadata: { ids, deleted: result.count } });
+    res.json({ success: true, data: { updated: result.count, requested: ids.length } });
+  } catch (e) { next(e); }
 });
 
 // POST /api/admin/scholarships/bulk/approve
@@ -167,6 +238,54 @@ router.post('/:id/edit', validate(editSchema), async (req, res, next) => {
       data: updateData
     });
     res.json({ success: true, data: updated });
+  } catch (e) { next(e); }
+});
+
+// ===== GENERAL MANAGEMENT SINGLE-ITEM ENDPOINTS =====
+
+const updateScholarshipSchema = z.object({
+  title: z.string().min(3).optional(),
+  description: z.string().min(20).optional(),
+  provider: z.string().min(1).optional(),
+  deadline: z.string().optional().nullable(),
+  applicationUrl: z.string().url().optional(),
+  level: z.enum(['UNDERGRAD', 'MASTERS', 'PHD', 'POSTDOC', 'OTHER']).optional(),
+  isApproved: z.boolean().optional(),
+  isFeatured: z.boolean().optional()
+});
+
+// PATCH /api/admin/scholarships/:id
+router.patch('/:id', validate(updateScholarshipSchema), async (req, res, next) => {
+  try {
+    const existing = await prisma.scholarship.findUnique({ where: { id: req.params.id } });
+    if (!existing) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Scholarship not found' } });
+    }
+    const body = req.body as z.infer<typeof updateScholarshipSchema>;
+    const updateData: Record<string, unknown> = {};
+    if (body.title !== undefined) updateData.title = body.title;
+    if (body.description !== undefined) updateData.description = body.description;
+    if (body.provider !== undefined) updateData.provider = body.provider;
+    if (body.deadline !== undefined) updateData.deadline = body.deadline ? new Date(body.deadline) : null;
+    if (body.applicationUrl !== undefined) updateData.applicationUrl = body.applicationUrl;
+    if (body.level !== undefined) updateData.level = body.level;
+    if (body.isApproved !== undefined) updateData.isApproved = body.isApproved;
+    if (body.isFeatured !== undefined) updateData.isFeatured = body.isFeatured;
+
+    const updated = await prisma.scholarship.update({ where: { id: req.params.id }, data: updateData });
+    res.json({ success: true, data: updated });
+  } catch (e) { next(e); }
+});
+
+// DELETE /api/admin/scholarships/:id
+router.delete('/:id', async (req, res, next) => {
+  try {
+    const existing = await prisma.scholarship.findUnique({ where: { id: req.params.id } });
+    if (!existing) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Scholarship not found' } });
+    }
+    await prisma.scholarship.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
   } catch (e) { next(e); }
 });
 

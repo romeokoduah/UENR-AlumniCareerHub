@@ -22,6 +22,7 @@ const SECTIONS: {
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/admin/users', label: 'Users & roles', icon: UsersIcon },
   { to: '/admin/opportunities', label: 'Opportunities', icon: Briefcase },
+  { to: '/admin/scholarships', label: 'Manage Scholarships', icon: GraduationCap },
   { to: '/admin/scholarships-review', label: 'Scholarships Review', icon: GraduationCap },
   { to: '/admin/opportunities-review', label: 'Jobs Review', icon: Briefcase },
   { to: '/admin/ingest-health', label: 'Ingest Health', icon: Activity },
