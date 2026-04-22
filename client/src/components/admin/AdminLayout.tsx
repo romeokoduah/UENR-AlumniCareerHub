@@ -24,6 +24,7 @@ const SECTIONS: {
   { to: '/admin/opportunities', label: 'Opportunities', icon: Briefcase },
   { to: '/admin/scholarships-review', label: 'Scholarships Review', icon: GraduationCap },
   { to: '/admin/opportunities-review', label: 'Jobs Review', icon: Briefcase },
+  { to: '/admin/ingest-health', label: 'Ingest Health', icon: Activity },
   { to: '/admin/landing', label: 'Landing page', icon: ImageIcon },
   { to: '/admin/learning', label: 'Learning queue', icon: BookOpen },
   { to: '/admin/achievements', label: 'Achievements queue', icon: Trophy },
