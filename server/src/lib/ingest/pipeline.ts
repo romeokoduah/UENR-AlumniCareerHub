@@ -58,7 +58,11 @@ export async function runPipelineForAdapter(
 
   const botUserId = await getBotUserId();
 
-  for (const raw of items) {
+  // Per-item processing is independent (dedup lookup, classify, reachability,
+  // upsert) so we fan out with Promise.all instead of sequential. 10-15 items
+  // per adapter × ~1s Groq each would blow past Vercel's 60s cap sequentially
+  // but completes in ~2-5s in parallel. Groq free tier handles this concurrency.
+  const decisions = await Promise.all(items.map(async (raw): Promise<'PUBLISHED' | 'PENDING_REVIEW' | 'REJECTED'> => {
     const title = sanitizeTitle(raw.title);
     const description = sanitizeDescription(raw.description);
     const provider = sanitizeTitle(raw.providerName ?? adapter.displayName);
@@ -81,11 +85,12 @@ export async function runPipelineForAdapter(
       title
     });
 
-    const classifier = await classifyScholarship(
-      { ...raw, title, description, providerName: provider },
-      aiJson
-    );
-    const clsReach = await urlReachable(canonSourceUrl || raw.applicationUrl, fetchFn);
+    // Run the two I/O-bound slowpokes (Groq + HTTP HEAD) concurrently.
+    const [classifier, clsReach] = await Promise.all([
+      classifyScholarship({ ...raw, title, description, providerName: provider }, aiJson),
+      urlReachable(canonSourceUrl || raw.applicationUrl, fetchFn)
+    ]);
+
     const deadlineOk = classifier?.deadline.kind === 'date'
       ? (new Date(classifier.deadline.iso).getTime() > Date.now() ? 1 : 0)
       : classifier?.deadline.kind === 'rolling' ? 0.8 : 0;
@@ -104,10 +109,6 @@ export async function runPipelineForAdapter(
     };
     const confidence = scoreConfidence(signals);
     const decision = decisionFor(confidence);
-
-    if (decision === 'PUBLISHED') result.itemsPublished++;
-    else if (decision === 'PENDING_REVIEW') result.itemsQueued++;
-    else result.itemsRejected++;
 
     const deadlineDate = classifier?.deadline.kind === 'date'
       ? new Date(classifier.deadline.iso)
@@ -148,6 +149,14 @@ export async function runPipelineForAdapter(
     } else {
       await prisma.scholarship.create({ data });
     }
+
+    return decision;
+  }));
+
+  for (const d of decisions) {
+    if (d === 'PUBLISHED') result.itemsPublished++;
+    else if (d === 'PENDING_REVIEW') result.itemsQueued++;
+    else result.itemsRejected++;
   }
 
   return result;
