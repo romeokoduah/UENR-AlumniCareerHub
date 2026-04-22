@@ -45,6 +45,19 @@ enum ApplicationStatus {
   WITHDRAWN
 }
 
+enum ScholarshipSource {
+  USER
+  ADMIN
+  INGESTED
+}
+
+enum ScholarshipStatus {
+  PENDING_REVIEW
+  PUBLISHED
+  REJECTED
+  EXPIRED
+}
+
 enum ScholarshipLevel {
   UNDERGRAD
   MASTERS
@@ -78,51 +91,51 @@ enum NotificationType {
 }
 
 model User {
-  id               String   @id @default(cuid())
-  email            String   @unique
-  passwordHash     String
-  role             Role     @default(STUDENT)
-  firstName        String
-  lastName         String
-  avatar           String?
-  bio              String?
-  programme        String?
-  graduationYear   Int?
-  studentId        String?
-  skills           String[] @default([])
-  linkedinUrl      String?
-  phone            String?
-  location         String?
-  currentRole      String?
-  currentCompany   String?
-  isVerified       Boolean  @default(false)
-  isApproved       Boolean  @default(false)
-  isSuperuser      Boolean  @default(false)
-  profileComplete  Boolean  @default(false)
-  visibility       String   @default("members")
-  suspendedAt      DateTime?
-  deletedAt        DateTime?
-  passwordResetToken      String?   @unique
-  passwordResetExpiresAt  DateTime?
-  tokenVersion     Int      @default(0)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                     String    @id @default(cuid())
+  email                  String    @unique
+  passwordHash           String
+  role                   Role      @default(STUDENT)
+  firstName              String
+  lastName               String
+  avatar                 String?
+  bio                    String?
+  programme              String?
+  graduationYear         Int?
+  studentId              String?
+  skills                 String[]  @default([])
+  linkedinUrl            String?
+  phone                  String?
+  location               String?
+  currentRole            String?
+  currentCompany         String?
+  isVerified             Boolean   @default(false)
+  isApproved             Boolean   @default(false)
+  isSuperuser            Boolean   @default(false)
+  profileComplete        Boolean   @default(false)
+  visibility             String    @default("members")
+  suspendedAt            DateTime?
+  deletedAt              DateTime?
+  passwordResetToken     String?   @unique
+  passwordResetExpiresAt DateTime?
+  tokenVersion           Int       @default(0)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
-  opportunitiesPosted Opportunity[]       @relation("PostedOpportunities")
+  opportunitiesPosted Opportunity[]           @relation("PostedOpportunities")
   applications        Application[]
   bookmarks           Bookmark[]
-  scholarshipsPosted  Scholarship[]       @relation("PostedScholarships")
+  scholarshipsPosted  Scholarship[]           @relation("PostedScholarships")
   mentorProfile       MentorProfile?
-  mentorMatches       MentorshipMatch[]   @relation("Mentor")
-  menteeMatches       MentorshipMatch[]   @relation("Mentee")
-  eventsHosted        Event[]             @relation("HostedEvents")
+  mentorMatches       MentorshipMatch[]       @relation("Mentor")
+  menteeMatches       MentorshipMatch[]       @relation("Mentee")
+  eventsHosted        Event[]                 @relation("HostedEvents")
   eventRegistrations  EventRegistration[]
   notifications       Notification[]
   cvs                 CV[]
   interviewPosts      InterviewExperience[]
   chatMessages        ChatMessage[]
-  messagesSent        Message[]           @relation("MessagesSent")
-  messagesReceived    Message[]           @relation("MessagesReceived")
+  messagesSent        Message[]               @relation("MessagesSent")
+  messagesReceived    Message[]               @relation("MessagesReceived")
   careerActivity      CareerToolsActivity[]
   coverLetters        CoverLetter[]
   portfolios          Portfolio[]
@@ -130,52 +143,52 @@ model User {
   skillAssessments    SkillAssessment[]
   learningProgress    LearningProgress[]
   certifications      Certification[]
-  resourcesSubmitted  LearningResource[]  @relation("SubmittedResources")
+  resourcesSubmitted  LearningResource[]      @relation("SubmittedResources")
   questionVotes       InterviewQuestionVote[]
   aptitudeAttempts    AptitudeAttempt[]
-  gigsPosted          FreelanceGig[]    @relation("PostedGigs")
-  gigBids             FreelanceBid[]    @relation("Bids")
-  reviewsGiven        FreelanceReview[] @relation("GivenReviews")
-  reviewsReceived     FreelanceReview[] @relation("ReceivedReviews")
-  counselingSlots     CounselingSlot[]      @relation("StaffSlots")
-  counselingBookings  CounselingBooking[]   @relation("AlumniBookings")
+  gigsPosted          FreelanceGig[]          @relation("PostedGigs")
+  gigBids             FreelanceBid[]          @relation("Bids")
+  reviewsGiven        FreelanceReview[]       @relation("GivenReviews")
+  reviewsReceived     FreelanceReview[]       @relation("ReceivedReviews")
+  counselingSlots     CounselingSlot[]        @relation("StaffSlots")
+  counselingBookings  CounselingBooking[]     @relation("AlumniBookings")
   transcriptRequests  TranscriptRequest[]
   achievements        Achievement[]
-  congratsGiven       AchievementCongrats[] @relation("CongratsGiven")
-  candidateNotes      CandidateNote[]       @relation("ApplicationNotes")
-  pooledCandidates    TalentPoolEntry[]     @relation("PooledCandidates")
-  talentPoolOwners    TalentPoolEntry[]     @relation("TalentPoolOwners")
-  auditLogs           AuditLog[]            @relation("AuditActor")
+  congratsGiven       AchievementCongrats[]   @relation("CongratsGiven")
+  candidateNotes      CandidateNote[]         @relation("ApplicationNotes")
+  pooledCandidates    TalentPoolEntry[]       @relation("PooledCandidates")
+  talentPoolOwners    TalentPoolEntry[]       @relation("TalentPoolOwners")
+  auditLogs           AuditLog[]              @relation("AuditActor")
   loginEvents         LoginEvent[]
   cvMatchRuns         CvMatchRun[]
 }
 
 model Opportunity {
-  id                String          @id @default(cuid())
-  title             String
-  description       String
-  company           String
-  location          String
-  locationType      LocationType    @default(ONSITE)
-  type              OpportunityType
-  salaryMin         Int?
-  salaryMax         Int?
-  currency          String          @default("GHS")
-  deadline          DateTime
-  requiredSkills    String[]        @default([])
-  preferredSkills   String[]        @default([])
-  industry          String?
-  experienceLevel   String?
-  applicationUrl    String?
-  postedById        String
-  postedBy          User            @relation("PostedOpportunities", fields: [postedById], references: [id], onDelete: Cascade)
-  isApproved        Boolean         @default(true)
-  isActive          Boolean         @default(true)
-  isFeatured        Boolean         @default(false)
-  customQuestions   Json?
-  anonymousApplications Boolean     @default(false)
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  id                    String          @id @default(cuid())
+  title                 String
+  description           String
+  company               String
+  location              String
+  locationType          LocationType    @default(ONSITE)
+  type                  OpportunityType
+  salaryMin             Int?
+  salaryMax             Int?
+  currency              String          @default("GHS")
+  deadline              DateTime
+  requiredSkills        String[]        @default([])
+  preferredSkills       String[]        @default([])
+  industry              String?
+  experienceLevel       String?
+  applicationUrl        String?
+  postedById            String
+  postedBy              User            @relation("PostedOpportunities", fields: [postedById], references: [id], onDelete: Cascade)
+  isApproved            Boolean         @default(true)
+  isActive              Boolean         @default(true)
+  isFeatured            Boolean         @default(false)
+  customQuestions       Json?
+  anonymousApplications Boolean         @default(false)
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
 
   applications Application[]
   bookmarks    Bookmark[]
@@ -185,29 +198,29 @@ model Opportunity {
 }
 
 model Application {
-  id                       String            @id @default(cuid())
-  userId                   String
-  user                     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  opportunityId            String
-  opportunity              Opportunity       @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
-  cvUrl                    String?
-  coverLetter              String?
-  status                   ApplicationStatus @default(APPLIED)
+  id                      String            @id @default(cuid())
+  userId                  String
+  user                    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  opportunityId           String
+  opportunity             Opportunity       @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  cvUrl                   String?
+  coverLetter             String?
+  status                  ApplicationStatus @default(APPLIED)
   // ATS extension fields (added in Phase 6, all nullable / defaulted for
   // backward compatibility with the existing apply flow):
-  customAnswers            Json?
-  recruiterScore           Float?
-  recruiterScoreBreakdown  Json?
+  customAnswers           Json?
+  recruiterScore          Float?
+  recruiterScoreBreakdown Json?
   // v3: AI-driven scoring snapshot computed once at apply-time so
   // recruiter views are token-free. Falls back to the deterministic
   // recruiterScore when AI is rate-limited or off.
-  aiScore                  Int?
-  aiBreakdown              Json?
-  aiReasoning              String?
-  aiStrengths              String[]          @default([])
-  aiConcerns               String[]          @default([])
-  appliedAt                DateTime          @default(now())
-  updatedAt                DateTime          @updatedAt
+  aiScore                 Int?
+  aiBreakdown             Json?
+  aiReasoning             String?
+  aiStrengths             String[]          @default([])
+  aiConcerns              String[]          @default([])
+  appliedAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
 
   notes CandidateNote[]
 
@@ -255,25 +268,39 @@ model Bookmark {
 }
 
 model Scholarship {
-  id              String           @id @default(cuid())
-  title           String
-  provider        String
-  description     String
-  eligibility     String
-  deadline        DateTime
-  awardAmount     String?
-  applicationUrl  String
-  level           ScholarshipLevel
-  fieldOfStudy    String?
-  location        String?
-  tags            String[]         @default([])
-  submittedById   String
-  submittedBy     User             @relation("PostedScholarships", fields: [submittedById], references: [id], onDelete: Cascade)
-  isApproved      Boolean          @default(false)
-  createdAt       DateTime         @default(now())
+  id             String           @id @default(cuid())
+  title          String
+  provider       String
+  description    String
+  eligibility    String
+  deadline       DateTime?
+  awardAmount    String?
+  applicationUrl String
+  level          ScholarshipLevel
+  fieldOfStudy   String?
+  location       String?
+  tags           String[]         @default([])
+  submittedById  String?
+  submittedBy    User?            @relation("PostedScholarships", fields: [submittedById], references: [id], onDelete: SetNull)
+  isApproved     Boolean          @default(false)
+
+  source            ScholarshipSource @default(USER)
+  status            ScholarshipStatus @default(PUBLISHED)
+  sourceUrl         String?
+  sourceName        String?
+  confidence        Float?
+  verifierReason    String?
+  ingestedAt        DateTime?
+  category          Json?
+  rawPayload        Json?
+  additionalSources String[]          @default([])
+
+  createdAt DateTime @default(now())
 
   @@index([level, isApproved])
   @@index([deadline])
+  @@index([source, status])
+  @@index([status, ingestedAt])
 }
 
 model MentorProfile {
@@ -295,15 +322,15 @@ model MentorProfile {
 }
 
 model MentorshipMatch {
-  id         String      @id @default(cuid())
-  mentorId   String
-  mentor     User        @relation("Mentor", fields: [mentorId], references: [id], onDelete: Cascade)
-  menteeId   String
-  mentee     User        @relation("Mentee", fields: [menteeId], references: [id], onDelete: Cascade)
-  status     MatchStatus @default(PENDING)
-  goals      String?
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  id        String      @id @default(cuid())
+  mentorId  String
+  mentor    User        @relation("Mentor", fields: [mentorId], references: [id], onDelete: Cascade)
+  menteeId  String
+  mentee    User        @relation("Mentee", fields: [menteeId], references: [id], onDelete: Cascade)
+  status    MatchStatus @default(PENDING)
+  goals     String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 
   sessions Session[]
 
@@ -440,7 +467,7 @@ model CoverLetter {
   title     String
   template  String   @default("classic")
   data      Json
-  jobLinkId String?  // Optional link to an Opportunity this letter targets
+  jobLinkId String? // Optional link to an Opportunity this letter targets
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -459,9 +486,9 @@ model Portfolio {
   bio          String?
   theme        String   @default("clean")
   contactEmail String?
-  links        Json?    // [{ label, url }]
+  links        Json? // [{ label, url }]
   isPublished  Boolean  @default(false)
-  passwordHash String?  // optional gating
+  passwordHash String? // optional gating
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -471,17 +498,17 @@ model Portfolio {
 }
 
 model PortfolioProject {
-  id           String    @id @default(cuid())
-  portfolioId  String
-  portfolio    Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
-  position     Int       @default(0)
-  title        String
-  summary      String
-  role         String?
-  coverUrl     String?
-  techStack    String[]  @default([])
-  externalUrl  String?
-  caseStudyMd  String?
+  id          String    @id @default(cuid())
+  portfolioId String
+  portfolio   Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  position    Int       @default(0)
+  title       String
+  summary     String
+  role        String?
+  coverUrl    String?
+  techStack   String[]  @default([])
+  externalUrl String?
+  caseStudyMd String?
 
   @@index([portfolioId, position])
 }
@@ -501,17 +528,17 @@ enum VaultCategory {
 }
 
 model VaultDocument {
-  id          String        @id @default(cuid())
-  userId      String
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  filename    String
+  id           String        @id @default(cuid())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  filename     String
   originalName String
-  mimetype    String
-  size        Int
-  url         String
-  category    VaultCategory @default(OTHER)
-  notes       String?
-  createdAt   DateTime      @default(now())
+  mimetype     String
+  size         Int
+  url          String
+  category     VaultCategory @default(OTHER)
+  notes        String?
+  createdAt    DateTime      @default(now())
 
   shares VaultShareLink[]
 
@@ -519,16 +546,16 @@ model VaultDocument {
 }
 
 model VaultShareLink {
-  id            String        @id @default(cuid())
-  documentId    String
-  document      VaultDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  token         String        @unique
-  passwordHash  String?
-  expiresAt     DateTime?
-  maxViews      Int?
-  viewCount     Int           @default(0)
-  isRevoked     Boolean       @default(false)
-  createdAt     DateTime      @default(now())
+  id           String        @id @default(cuid())
+  documentId   String
+  document     VaultDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  token        String        @unique
+  passwordHash String?
+  expiresAt    DateTime?
+  maxViews     Int?
+  viewCount    Int           @default(0)
+  isRevoked    Boolean       @default(false)
+  createdAt    DateTime      @default(now())
 
   accessLog VaultAccessLog[]
 
@@ -717,20 +744,20 @@ enum InterviewDifficulty {
 // optional and references RoleProfile.slug when the question is bound
 // to a particular target role.
 model InterviewQuestion {
-  id             String              @id @default(cuid())
-  prompt         String
-  guidance       String?
-  sampleAnswer   String?
-  category       InterviewCategory
-  difficulty     InterviewDifficulty @default(MEDIUM)
-  roleSlug       String?
-  industry       String?
-  tags           String[]            @default([])
-  upvotes        Int                 @default(0)
-  flagCount      Int                 @default(0)
-  isApproved     Boolean             @default(true)
-  submittedById  String?
-  createdAt      DateTime            @default(now())
+  id            String              @id @default(cuid())
+  prompt        String
+  guidance      String?
+  sampleAnswer  String?
+  category      InterviewCategory
+  difficulty    InterviewDifficulty @default(MEDIUM)
+  roleSlug      String?
+  industry      String?
+  tags          String[]            @default([])
+  upvotes       Int                 @default(0)
+  flagCount     Int                 @default(0)
+  isApproved    Boolean             @default(true)
+  submittedById String?
+  createdAt     DateTime            @default(now())
 
   votes InterviewQuestionVote[]
 
@@ -777,12 +804,12 @@ model AptitudeQuestion {
 }
 
 model AptitudeAttempt {
-  id           String                  @id @default(cuid())
+  id           String           @id @default(cuid())
   userId       String
-  user         User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   category     AptitudeCategory
-  isMock       Boolean                 @default(false)
-  startedAt    DateTime                @default(now())
+  isMock       Boolean          @default(false)
+  startedAt    DateTime         @default(now())
   completedAt  DateTime?
   totalSeconds Int?
   score        Int?
@@ -807,18 +834,18 @@ model AptitudeAttemptAnswer {
 // Salary benchmarks — one row per (role × seniority × city × currency).
 // All amounts are MONTHLY in the row's currency.
 model SalaryBenchmark {
-  id          String   @id @default(cuid())
-  role        String
-  seniority   String
-  city        String
-  country     String
-  currency    String
-  minMonthly  Int
-  maxMonthly  Int
-  source      String?
-  notes       String?
-  updatedAt   DateTime @updatedAt
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  role       String
+  seniority  String
+  city       String
+  country    String
+  currency   String
+  minMonthly Int
+  maxMonthly Int
+  source     String?
+  notes      String?
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
 
   @@index([role, seniority])
   @@index([country, city])
@@ -910,21 +937,21 @@ enum GigCategory {
 }
 
 model FreelanceGig {
-  id            String      @id @default(cuid())
-  posterId      String
-  poster        User        @relation("PostedGigs", fields: [posterId], references: [id], onDelete: Cascade)
-  title         String
-  description   String
-  category      GigCategory
-  budgetMin     Int
-  budgetMax     Int
-  currency      String      @default("GHS")
-  deadlineAt    DateTime?
-  skills        String[]    @default([])
-  status        GigStatus   @default(OPEN)
-  awardedBidId  String?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  id           String      @id @default(cuid())
+  posterId     String
+  poster       User        @relation("PostedGigs", fields: [posterId], references: [id], onDelete: Cascade)
+  title        String
+  description  String
+  category     GigCategory
+  budgetMin    Int
+  budgetMax    Int
+  currency     String      @default("GHS")
+  deadlineAt   DateTime?
+  skills       String[]    @default([])
+  status       GigStatus   @default(OPEN)
+  awardedBidId String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
   bids FreelanceBid[]
 
@@ -1003,16 +1030,16 @@ enum CounselingBookingStatus {
 }
 
 model CounselingSlot {
-  id            String        @id @default(cuid())
-  staffId       String
-  staff         User          @relation("StaffSlots", fields: [staffId], references: [id], onDelete: Cascade)
-  startsAt      DateTime
-  endsAt        DateTime
-  mode          CounselingMode @default(VIDEO)
-  capacity      Int           @default(1)
-  isActive      Boolean       @default(true)
-  notes         String?
-  createdAt     DateTime      @default(now())
+  id        String         @id @default(cuid())
+  staffId   String
+  staff     User           @relation("StaffSlots", fields: [staffId], references: [id], onDelete: Cascade)
+  startsAt  DateTime
+  endsAt    DateTime
+  mode      CounselingMode @default(VIDEO)
+  capacity  Int            @default(1)
+  isActive  Boolean        @default(true)
+  notes     String?
+  createdAt DateTime       @default(now())
 
   bookings CounselingBooking[]
 
@@ -1210,12 +1237,12 @@ model CvMatchRun {
   // v3: AI is the primary engine. Snapshots so cached views render
   // without re-spending tokens.
   aiScore         Int?
-  aiBreakdown     Json?     // { hardSkills, softSignals, experience, education, cultureFit, growthSignal } — each 0..1
+  aiBreakdown     Json? // { hardSkills, softSignals, experience, education, cultureFit, growthSignal } — each 0..1
   aiReasoning     String?
-  aiSoftSignals   String[]  @default([])
+  aiSoftSignals   String[] @default([])
   aiIndustry      String?
   aiSeniority     String?
-  aiRefinements   Json?     // [{ kind, severity, message, reasoning, skill? }]
+  aiRefinements   Json? // [{ kind, severity, message, reasoning, skill? }]
   createdAt       DateTime @default(now())
 
   @@index([userId, createdAt(sort: Desc)])
@@ -1244,4 +1271,36 @@ model SiteContent {
   key       String   @unique
   data      Json
   updatedAt DateTime @updatedAt
+}
+
+model IngestJob {
+  id             String   @id @default(cuid())
+  runId          String
+  source         String
+  status         String
+  attempts       Int      @default(0)
+  itemsFound     Int?
+  itemsPublished Int?
+  itemsQueued    Int?
+  error          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([runId, source])
+  @@index([status, createdAt])
+}
+
+model IngestRun {
+  id               String    @id @default(cuid())
+  startedAt        DateTime  @default(now())
+  endedAt          DateTime?
+  sourcesAttempted Int       @default(0)
+  sourcesOk        Int       @default(0)
+  sourcesFailed    Int       @default(0)
+  itemsPublished   Int       @default(0)
+  itemsQueued      Int       @default(0)
+  itemsRejected    Int       @default(0)
+  triggeredBy      String
+
+  @@index([startedAt])
 }
