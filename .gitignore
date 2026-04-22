@@ -37,3 +37,6 @@ bun.lockb
 
 .vercel
 .env*.local
+
+# Git worktrees (scripted isolated workspaces)
+.worktrees/
