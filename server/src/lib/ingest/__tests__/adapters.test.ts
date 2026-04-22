@@ -1,5 +1,12 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import { getAdapter, listAdapters } from '../adapters/index.js';
+
+const prev = process.env.INCLUDE_MOCK_ADAPTER;
+beforeAll(() => { process.env.INCLUDE_MOCK_ADAPTER = '1'; });
+afterAll(() => {
+  if (prev === undefined) delete process.env.INCLUDE_MOCK_ADAPTER;
+  else process.env.INCLUDE_MOCK_ADAPTER = prev;
+});
 
 describe('adapter registry', () => {
   it('lists at least the mock adapter', () => {
