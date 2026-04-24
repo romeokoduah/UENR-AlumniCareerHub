@@ -410,6 +410,30 @@ router.post('/:id/apply', requireAuth, async (req, res, next) => {
   }
 });
 
+// Clickthrough logger for external-apply jobs. The client fires this
+// fire-and-forget before window.open, so we can see referral volume per
+// opportunity in the audit log without breaking the apply flow.
+// optionalAuth — anonymous clickthroughs are fine to log (actorId null).
+router.post('/:id/clickthrough', optionalAuth, async (req, res, next) => {
+  try {
+    const opp = await prisma.opportunity.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, applicationUrl: true, sourceName: true }
+    });
+    if (!opp) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
+    if (req.auth?.sub) {
+      await logAudit({
+        actorId: req.auth.sub,
+        action: 'opportunity.clickthrough',
+        targetType: 'Opportunity',
+        targetId: opp.id,
+        metadata: { applicationUrl: opp.applicationUrl, sourceName: opp.sourceName }
+      }).catch(() => undefined);
+    }
+    res.json({ success: true, data: { ok: true } });
+  } catch (e) { next(e); }
+});
+
 router.post('/:id/bookmark', requireAuth, async (req, res, next) => {
   try {
     const existing = await prisma.bookmark.findUnique({

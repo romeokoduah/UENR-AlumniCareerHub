@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { MapPin, Clock, Building, ArrowLeft, Bookmark } from 'lucide-react';
+import { MapPin, Clock, Building, ArrowLeft, Bookmark, ExternalLink } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
@@ -18,6 +18,18 @@ export default function OpportunityDetailPage() {
 
   const apply = async () => {
     if (!user) return navigate('/login');
+    // External listings (ingested aggregator jobs + any user-posted job that
+    // points at an external ATS) don't accept in-app applications — the
+    // employer collects candidates on their own site. Send the user there.
+    if (data?.applicationUrl) {
+      // Fire-and-forget a "clickthrough" audit so the employer's analytics
+      // still see a referral, without blocking the browser tab-open.
+      api.post(`/opportunities/${id}/clickthrough`, {}).catch(() => { /* best-effort */ });
+      window.open(data.applicationUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    // Fallback: in-app apply flow (used by alumni-posted roles without an
+    // external application URL).
     try {
       await api.post(`/opportunities/${id}/apply`, {});
       toast.success('Application submitted! 🎉');
@@ -36,7 +48,10 @@ export default function OpportunityDetailPage() {
 
   if (isLoading || !data) return <div className="mx-auto max-w-4xl px-4 py-10"><div className="skeleton h-96" /></div>;
 
-  const daysLeft = Math.max(0, Math.ceil((new Date(data.deadline).getTime() - Date.now()) / 86400000));
+  const daysLeft = data.deadline
+    ? Math.max(0, Math.ceil((new Date(data.deadline).getTime() - Date.now()) / 86400000))
+    : null;
+  const isExternal = !!data.applicationUrl;
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-10">
@@ -52,12 +67,17 @@ export default function OpportunityDetailPage() {
             <div className="mt-3 flex flex-wrap gap-4 text-sm text-[var(--muted)]">
               <span className="inline-flex items-center gap-1"><MapPin size={14} /> {data.location} · {data.locationType.toLowerCase()}</span>
               <span className="inline-flex items-center gap-1"><Building size={14} /> {data.type.replace('_', ' ').toLowerCase()}</span>
-              <span className="inline-flex items-center gap-1"><Clock size={14} /> {daysLeft}d left</span>
+              <span className="inline-flex items-center gap-1">
+                <Clock size={14} />
+                {daysLeft === null ? 'Rolling' : `${daysLeft}d left`}
+              </span>
             </div>
           </div>
           <div className="flex gap-2">
             <button onClick={bookmark} className="btn-ghost"><Bookmark size={16} /></button>
-            <button onClick={apply} className="btn-primary">Quick Apply</button>
+            <button onClick={apply} className="btn-primary inline-flex items-center gap-2">
+              {isExternal ? <>Apply on source site <ExternalLink size={14} /></> : 'Quick Apply'}
+            </button>
           </div>
         </div>
 
