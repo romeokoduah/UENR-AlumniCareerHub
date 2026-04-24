@@ -1,5 +1,28 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
-import { makeAdzunaAdapter } from '../adzuna.js';
+import { makeAdzunaAdapter, adzunaLandUrlFor } from '../adzuna.js';
+
+describe('adzunaLandUrlFor', () => {
+  it('builds the one-click redirector URL from redirect_url details path', () => {
+    expect(adzunaLandUrlFor('gb', { redirect_url: 'https://www.adzuna.co.uk/jobs/details/4500004343' }))
+      .toBe('https://www.adzuna.co.uk/jobs/land/ad/4500004343');
+  });
+
+  it('uses numeric id when redirect_url is missing or unparseable', () => {
+    expect(adzunaLandUrlFor('gb', { id: 789 }))
+      .toBe('https://www.adzuna.co.uk/jobs/land/ad/789');
+  });
+
+  it('uses US host for country=us', () => {
+    expect(adzunaLandUrlFor('us', { id: 42 }))
+      .toBe('https://www.adzuna.com/jobs/land/ad/42');
+  });
+
+  it('returns empty string when no usable id can be derived', () => {
+    expect(adzunaLandUrlFor('gb', { redirect_url: 'https://weird-url' })).toBe('');
+    expect(adzunaLandUrlFor('gb', {})).toBe('');
+    expect(adzunaLandUrlFor('gb', { adref: 'abc' })).toBe('');
+  });
+});
 
 // Sample well-formed Adzuna response.
 const SAMPLE_RESPONSE = {
@@ -91,7 +114,9 @@ describe('makeAdzunaAdapter', () => {
       expect(first.title).toBe('Data Scientist');
       expect(first.company).toBe('Acme Corp');
       expect(first.location).toBe('London, UK');
-      expect(first.applicationUrl).toBe('https://www.adzuna.co.uk/jobs/details/123456');
+      // applicationUrl now points at the one-click employer redirector
+      // (/jobs/land/ad/{id}) not the details page (/jobs/details/{id}).
+      expect(first.applicationUrl).toBe('https://www.adzuna.co.uk/jobs/land/ad/123456');
       expect(first.salaryMin).toBe(50000);
       expect(first.salaryMax).toBe(80000);
       expect(first.currency).toBe('GBP');
